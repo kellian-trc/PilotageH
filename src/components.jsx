@@ -1,4 +1,5 @@
 import React from "react";
+
 import {
   NavLink,
   useNavigate
@@ -28,13 +29,32 @@ import {
    LAYOUT
    ========================================================= */
 
-export function Layout({ children }) {
+export function Layout({
+  children
+}) {
   const nav = [
-    ["/", "Dashboard", LayoutDashboard],
-    ["/imports", "Données / Import", Upload],
-    ["/analyse", "Analyse", BarChart3],
-    ["/parametres", "Paramètres", Settings]
+    [
+      "/",
+      "Dashboard",
+      LayoutDashboard
+    ],
+    [
+      "/imports",
+      "Données / Import",
+      Upload
+    ],
+    [
+      "/analyse",
+      "Analyse",
+      BarChart3
+    ],
+    [
+      "/parametres",
+      "Paramètres",
+      Settings
+    ]
   ];
+
 
   return (
     <div className="app">
@@ -48,7 +68,10 @@ export function Layout({ children }) {
           </div>
 
           <div>
-            <b>Pilotage Heures</b>
+            <b>
+              Pilotage Heures
+            </b>
+
             <small>
               Contrôle industriel
             </small>
@@ -60,23 +83,25 @@ export function Layout({ children }) {
         <nav>
 
           {nav.map(
-            ([to, label, I]) => (
-
+            ([to, label, I]) =>
               <NavLink
                 key={to}
                 to={to}
-                end={to === "/"}
-                className={({ isActive }) =>
-                  isActive
-                    ? "nav active"
-                    : "nav"
+                end={
+                  to === "/"
+                }
+                className={
+                  ({
+                    isActive
+                  }) =>
+                    isActive
+                      ? "nav active"
+                      : "nav"
                 }
               >
                 <I size={17} />
                 {label}
               </NavLink>
-
-            )
           )}
 
         </nav>
@@ -171,10 +196,13 @@ export function KPI({
       </div>
 
       <div className="kpi-value">
+
         {value}
+
         <span>
           {unit || ""}
         </span>
+
       </div>
 
       {sub && (
@@ -200,7 +228,10 @@ export function Status({
       className="status"
       style={{
         color:
-          STATUS_COLORS[status],
+          STATUS_COLORS[
+            status
+          ],
+
         background:
           `${STATUS_COLORS[status]}15`
       }}
@@ -228,10 +259,13 @@ export function Filters({
   setFilters,
   showDate = true
 }) {
+
   const affairs = [
     ...new Set(
       rows
-        .map(r => r.affaire)
+        .map(
+          r => r.affaire
+        )
         .filter(Boolean)
     )
   ].sort(
@@ -246,14 +280,29 @@ export function Filters({
   const mets = [
     ...new Set(
       rows
-        .map(r => r.metier)
+        .map(
+          r => r.metier
+        )
         .filter(Boolean)
     )
   ];
 
 
+  const dates = [
+    ...new Set(
+      rows
+        .map(
+          r => r.date
+        )
+        .filter(Boolean)
+    )
+  ].sort();
+
+
   return (
     <div className="filters">
+
+      {/* AFFAIRE */}
 
       <label>
         Affaire
@@ -279,6 +328,7 @@ export function Filters({
             x => (
               <option
                 key={x}
+                value={x}
               >
                 {x}
               </option>
@@ -289,6 +339,8 @@ export function Filters({
 
       </label>
 
+
+      {/* MÉTIER */}
 
       <label>
         Métier
@@ -314,6 +366,7 @@ export function Filters({
             x => (
               <option
                 key={x}
+                value={x}
               >
                 {x}
               </option>
@@ -324,6 +377,8 @@ export function Filters({
 
       </label>
 
+
+      {/* DATE */}
 
       {showDate && (
         <label>
@@ -346,23 +401,16 @@ export function Filters({
               Toutes
             </option>
 
-            {[
-              ...new Set(
-                rows
-                  .map(r => r.date)
-                  .filter(Boolean)
+            {dates.map(
+              x => (
+                <option
+                  key={x}
+                  value={x}
+                >
+                  {x}
+                </option>
               )
-            ]
-              .sort()
-              .map(
-                x => (
-                  <option
-                    key={x}
-                  >
-                    {x}
-                  </option>
-                )
-              )}
+            )}
 
           </select>
 
@@ -370,16 +418,21 @@ export function Filters({
       )}
 
 
+      {/* RESET */}
+
       <button
         className="btn ghost"
         onClick={() =>
           setFilters({})
         }
       >
+
         <RefreshCw
           size={14}
         />
+
         Réinitialiser
+
       </button>
 
     </div>
@@ -397,41 +450,51 @@ export function Table({
   onDetail = true,
   filters = {}
 }) {
+
   const nav =
     useNavigate();
 
 
   /*
-   * Mémorise explicitement les filtres
-   * au moment où l'utilisateur clique sur
-   * "Voir".
+   * Construit l'URL du détail.
    *
-   * Cela garantit que le détail métier
-   * connaît exactement le contexte du Dashboard.
+   * Si une affaire est sélectionnée,
+   * elle est ajoutée à l'URL :
+   *
+   * /metier/Production?affaire=AFF-001
+   *
+   * Ainsi le détail sait quelle affaire
+   * doit continuer à être appliquée.
    */
-  const handleDetail = (
-    metier
-  ) => {
-    try {
-      sessionStorage.setItem(
-        "pilotageh-dashboard-filters",
-        JSON.stringify(
-          filters || {}
-        )
-      );
-    } catch (error) {
-      console.error(
-        "Erreur sauvegarde des filtres avant détail :",
-        error
-      );
-    }
+  const openDetail =
+    metier => {
 
-    nav(
-      `/metier/${encodeURIComponent(
-        metier
-      )}`
-    );
-  };
+      const params =
+        new URLSearchParams();
+
+
+      if (filters.affaire) {
+        params.set(
+          "affaire",
+          filters.affaire
+        );
+      }
+
+
+      const query =
+        params.toString();
+
+
+      nav(
+        `/metier/${encodeURIComponent(
+          metier
+        )}${
+          query
+            ? `?${query}`
+            : ""
+        }`
+      );
+    };
 
 
   return (
@@ -443,17 +506,49 @@ export function Table({
 
           <tr>
 
-            <th>Métier</th>
-            <th>Consommé</th>
-            <th>Budget à date</th>
-            <th>Budget alloué</th>
-            <th>Reste</th>
-            <th>Conso réelle</th>
-            <th>Conso à date</th>
-            <th>Écart h</th>
-            <th>Écart pts</th>
-            <th>Statut</th>
-            <th>Action</th>
+            <th>
+              Métier
+            </th>
+
+            <th>
+              Consommé
+            </th>
+
+            <th>
+              Budget à date
+            </th>
+
+            <th>
+              Budget alloué
+            </th>
+
+            <th>
+              Reste
+            </th>
+
+            <th>
+              Conso réelle
+            </th>
+
+            <th>
+              Conso à date
+            </th>
+
+            <th>
+              Écart h
+            </th>
+
+            <th>
+              Écart pts
+            </th>
+
+            <th>
+              Statut
+            </th>
+
+            <th>
+              Action
+            </th>
 
           </tr>
 
@@ -575,7 +670,7 @@ export function Table({
                     <button
                       className="btn detailbtn"
                       onClick={() =>
-                        handleDetail(
+                        openDetail(
                           r.metier
                         )
                       }

@@ -4,7 +4,8 @@ import {
   Routes,
   Route,
   useParams,
-  useNavigate
+  useNavigate,
+  useSearchParams
 } from "react-router-dom";
 
 import {
@@ -149,7 +150,9 @@ function useData() {
         onSettings
       );
 
-      if (typeof unsubscribeRealtime === "function") {
+      if (
+        typeof unsubscribeRealtime === "function"
+      ) {
         unsubscribeRealtime();
       }
     };
@@ -187,6 +190,97 @@ function Header({
 
 
 /* =========================================================
+   GRAPHIQUE HORIZONTAL SCROLLABLE
+   ========================================================= */
+
+function MetiersBarChart({
+  data,
+  bars,
+  yAxisUnit
+}) {
+  /*
+   * On réserve environ 120 px par métier.
+   * Ainsi, même avec beaucoup de métiers,
+   * les noms ne se chevauchent pas.
+   */
+  const chartWidth =
+    Math.max(
+      100,
+      data.length * 120
+    );
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        overflowX: "auto",
+        overflowY: "hidden",
+        paddingBottom: "8px"
+      }}
+    >
+      <div
+        style={{
+          width: `${chartWidth}px`,
+          minWidth: "100%",
+          height: "300px"
+        }}
+      >
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+        >
+          <BarChart
+            data={data}
+            margin={{
+              top: 10,
+              right: 20,
+              bottom: 65,
+              left: 0
+            }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              vertical={false}
+            />
+
+            <XAxis
+              dataKey="metier"
+              interval={0}
+              angle={-25}
+              textAnchor="end"
+              height={80}
+              tick={{
+                fontSize: 10
+              }}
+            />
+
+            <YAxis
+              unit={yAxisUnit || ""}
+            />
+
+            <Tooltip />
+
+            {bars.length > 1 && (
+              <Legend />
+            )}
+
+            {bars.map(bar => (
+              <Bar
+                key={bar.dataKey}
+                dataKey={bar.dataKey}
+                name={bar.name}
+                fill={bar.fill}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+
+/* =========================================================
    DASHBOARD
    ========================================================= */
 
@@ -196,49 +290,66 @@ function Dashboard() {
     settings
   } = useData();
 
+  const [
+    searchParams,
+    setSearchParams
+  ] = useSearchParams();
+
   /*
-   * Récupération du dernier filtre mémorisé.
-   * Cela permet de retrouver le filtre après
-   * un passage dans la vue détail métier.
+   * Le filtre Affaire est initialisé depuis l'URL.
+   * Exemple :
+   *
+   * /?affaire=AFF-001
+   *
+   * Cela permet de conserver le filtre lorsque
+   * l'utilisateur ouvre un détail métier.
    */
-  const [filters, setFilters] = useState(() => {
-    try {
-      const saved =
-        sessionStorage.getItem(
-          "pilotageh-dashboard-filters"
-        );
+  const initialAffaire =
+    searchParams.get("affaire") || "";
 
-      return saved
-        ? JSON.parse(saved)
-        : {};
-    } catch (error) {
-      console.error(
-        "Erreur lecture des filtres mémorisés :",
-        error
-      );
-
-      return {};
-    }
-  });
+  const [
+    filters,
+    setFilters
+  ] = useState(() => ({
+    affaire: initialAffaire,
+    metier:
+      searchParams.get("metier") || "",
+    date:
+      searchParams.get("date") || ""
+  }));
 
 
   /*
-   * Sauvegarde automatique des filtres
-   * du Dashboard.
+   * Synchronisation des filtres avec l'URL.
+   *
+   * Le filtre reste donc mémorisé même lorsque
+   * l'utilisateur quitte le Dashboard.
    */
   useEffect(() => {
-    try {
-      sessionStorage.setItem(
-        "pilotageh-dashboard-filters",
-        JSON.stringify(filters)
-      );
-    } catch (error) {
-      console.error(
-        "Erreur sauvegarde des filtres :",
-        error
-      );
+    const params = {};
+
+    if (filters.affaire) {
+      params.affaire = filters.affaire;
     }
-  }, [filters]);
+
+    if (filters.metier) {
+      params.metier = filters.metier;
+    }
+
+    if (filters.date) {
+      params.date = filters.date;
+    }
+
+    setSearchParams(
+      params,
+      {
+        replace: true
+      }
+    );
+  }, [
+    filters,
+    setSearchParams
+  ]);
 
 
   const s = useMemo(
@@ -256,6 +367,7 @@ function Dashboard() {
     ]
   );
 
+
   const t = s.total;
 
   const affairs =
@@ -264,10 +376,12 @@ function Dashboard() {
       "affaire"
     ).length;
 
+
   const pieData =
     s.lignes.filter(
       x => x.encouru > 0
     );
+
 
   return (
     <>
@@ -326,11 +440,13 @@ function Dashboard() {
         }
       />
 
+
       <Filters
         rows={rows}
         filters={filters}
         setFilters={setFilters}
       />
+
 
       <div className="kpis">
 
@@ -399,173 +515,111 @@ function Dashboard() {
 
       </div>
 
+
       <Table
         lignes={s.lignes}
         total={t}
         filters={filters}
       />
 
+
       <div className="grid2">
+
+        {/* =================================================
+            HISTOGRAMME 1
+           ================================================= */}
 
         <Card
           title="Budget alloué vs consommé"
           subtitle="Comparaison par métier"
         >
-          <ResponsiveContainer
-            width="100%"
-            height={300}
-          >
-            <BarChart
-              data={s.lignes}
-              margin={{
-                bottom: 55,
-                left: -10
-              }}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-              />
 
-              <XAxis
-                dataKey="metier"
-                angle={-25}
-                textAnchor="end"
-                height={65}
-                tick={{ fontSize: 10 }}
-              />
+          <MetiersBarChart
+            data={s.lignes}
+            bars={[
+              {
+                dataKey: "budgetAlloue",
+                name: "Budget alloué",
+                fill: "#94a3b8"
+              },
+              {
+                dataKey: "encouru",
+                name: "Consommé",
+                fill: "#2563eb"
+              }
+            ]}
+          />
 
-              <YAxis />
-
-              <Tooltip />
-
-              <Legend />
-
-              <Bar
-                dataKey="budgetAlloue"
-                name="Budget alloué"
-                fill="#94a3b8"
-              />
-
-              <Bar
-                dataKey="encouru"
-                name="Consommé"
-                fill="#2563eb"
-              />
-            </BarChart>
-          </ResponsiveContainer>
         </Card>
 
+
+        {/* =================================================
+            HISTOGRAMME 2
+           ================================================= */}
 
         <Card
           title="Consommé vs budget à date"
           subtitle="Indicateur principal de pilotage"
           highlight
         >
-          <ResponsiveContainer
-            width="100%"
-            height={300}
-          >
-            <BarChart
-              data={s.lignes}
-              margin={{
-                bottom: 55,
-                left: -10
-              }}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-              />
 
-              <XAxis
-                dataKey="metier"
-                angle={-25}
-                textAnchor="end"
-                height={65}
-                tick={{ fontSize: 10 }}
-              />
+          <MetiersBarChart
+            data={s.lignes}
+            bars={[
+              {
+                dataKey: "budgetDate",
+                name: "Budget à date",
+                fill: "#a7f3d0"
+              },
+              {
+                dataKey: "encouru",
+                name: "Consommé",
+                fill: "#0891b2"
+              }
+            ]}
+          />
 
-              <YAxis />
-
-              <Tooltip />
-
-              <Legend />
-
-              <Bar
-                dataKey="budgetDate"
-                name="Budget à date"
-                fill="#a7f3d0"
-              />
-
-              <Bar
-                dataKey="encouru"
-                name="Consommé"
-                fill="#0891b2"
-              />
-            </BarChart>
-          </ResponsiveContainer>
         </Card>
 
+
+        {/* =================================================
+            HISTOGRAMME 3
+           ================================================= */}
 
         <Card
           title="Taux de consommation"
           subtitle="Consommé / budget alloué"
         >
-          <ResponsiveContainer
-            width="100%"
-            height={300}
-          >
-            <BarChart
-              data={s.lignes}
-              margin={{
-                bottom: 55,
-                left: -10
-              }}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-              />
 
-              <XAxis
-                dataKey="metier"
-                angle={-25}
-                textAnchor="end"
-                height={65}
-                tick={{ fontSize: 10 }}
-              />
+          <MetiersBarChart
+            data={s.lignes}
+            yAxisUnit="%"
+            bars={[
+              {
+                dataKey: "consoReelle",
+                name: "Consommation réelle",
+                fill: "#2563eb"
+              },
+              {
+                dataKey: "consoDate",
+                name: "Budget à date",
+                fill: "#cbd5e1"
+              }
+            ]}
+          />
 
-              <YAxis unit="%" />
-
-              <Tooltip
-                formatter={value =>
-                  `${fmt1(value)} %`
-                }
-              />
-
-              <Legend />
-
-              <Bar
-                dataKey="consoReelle"
-                name="Consommation réelle"
-                fill="#2563eb"
-              />
-
-              <Bar
-                dataKey="consoDate"
-                name="Budget à date"
-                fill="#cbd5e1"
-              />
-            </BarChart>
-          </ResponsiveContainer>
         </Card>
 
+
+        {/* =================================================
+            CAMEMBERT
+           ================================================= */}
 
         <Card
           title="Répartition des heures consommées"
           subtitle="Part de chaque métier"
         >
+
           <ResponsiveContainer
             width="100%"
             height={300}
@@ -600,6 +654,7 @@ function Dashboard() {
 
             </PieChart>
           </ResponsiveContainer>
+
         </Card>
 
       </div>
@@ -626,6 +681,7 @@ function Login() {
 
   const [error, setError] =
     useState("");
+
 
   const handleSubmit =
     async e => {
@@ -654,6 +710,7 @@ function Login() {
         setBusy(false);
       }
     };
+
 
   return (
     <div className="loginpage">
@@ -751,6 +808,7 @@ function ProtectedRoute({
   const [session, setSession] =
     useState(undefined);
 
+
   useEffect(() => {
     let mounted = true;
 
@@ -771,6 +829,7 @@ function ProtectedRoute({
         }
       });
 
+
     const authSubscription =
       subscribeToAuth(
         s => {
@@ -779,6 +838,7 @@ function ProtectedRoute({
           }
         }
       );
+
 
     return () => {
       mounted = false;
@@ -795,7 +855,9 @@ function ProtectedRoute({
   }, []);
 
 
-  if (session === undefined) {
+  if (
+    session === undefined
+  ) {
     return (
       <div className="empty">
         Vérification de la connexion…
@@ -872,6 +934,7 @@ function Imports() {
     setMsg("");
     setMsgType("success");
 
+
     try {
       const result =
         await readWorkbook(file);
@@ -928,6 +991,7 @@ function Imports() {
 
 
       setBusy(true);
+
 
       try {
         await saveData(
@@ -1494,52 +1558,16 @@ function Analyse() {
           title="Écart en heures par métier"
         >
 
-          <ResponsiveContainer
-            width="100%"
-            height={320}
-          >
-
-            <BarChart
-              data={s.lignes}
-              margin={{
-                bottom: 55,
-                left: -10
-              }}
-            >
-
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-
-              <XAxis
-                dataKey="metier"
-                angle={-25}
-                textAnchor="end"
-                height={65}
-                tick={{
-                  fontSize: 10
-                }}
-              />
-
-              <YAxis />
-
-              <Tooltip />
-
-              <ReferenceLine
-                y={0}
-                stroke="#94a3b8"
-              />
-
-              <Bar
-                dataKey="ecartH"
-                name="Écart (h)"
-                fill="#0891b2"
-              />
-
-            </BarChart>
-
-          </ResponsiveContainer>
+          <MetiersBarChart
+            data={s.lignes}
+            bars={[
+              {
+                dataKey: "ecartH",
+                name: "Écart (h)",
+                fill: "#0891b2"
+              }
+            ]}
+          />
 
         </Card>
 
@@ -1548,56 +1576,16 @@ function Analyse() {
           title="Écart en points"
         >
 
-          <ResponsiveContainer
-            width="100%"
-            height={320}
-          >
-
-            <BarChart
-              data={s.lignes}
-              margin={{
-                bottom: 55,
-                left: -10
-              }}
-            >
-
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-
-              <XAxis
-                dataKey="metier"
-                angle={-25}
-                textAnchor="end"
-                height={65}
-                tick={{
-                  fontSize: 10
-                }}
-              />
-
-              <YAxis />
-
-              <Tooltip
-                formatter={value =>
-                  `${fmt1(value)} pts`
-                }
-              />
-
-              <ReferenceLine
-                y={0}
-                stroke="#94a3b8"
-              />
-
-              <Bar
-                dataKey="ecartPoints"
-                name="Écart (pts)"
-                fill="#7c3aed"
-              />
-
-            </BarChart>
-
-          </ResponsiveContainer>
+          <MetiersBarChart
+            data={s.lignes}
+            bars={[
+              {
+                dataKey: "ecartPoints",
+                name: "Écart (pts)",
+                fill: "#7c3aed"
+              }
+            ]}
+          />
 
         </Card>
 
@@ -1622,6 +1610,10 @@ function Detail() {
   const nav =
     useNavigate();
 
+  const [
+    searchParams
+  ] = useSearchParams();
+
   const {
     rows,
     settings
@@ -1629,49 +1621,14 @@ function Detail() {
 
 
   /*
-   * On récupère les filtres du Dashboard
-   * mémorisés dans sessionStorage.
+   * Récupération automatique du filtre Affaire
+   * transmis depuis le Dashboard.
    *
-   * Aucun menu de filtre supplémentaire
-   * n'est affiché dans cette page.
+   * Aucun nouveau menu déroulant n'est ajouté
+   * à cette page.
    */
-  const dashboardFilters = useMemo(() => {
-    try {
-      const saved =
-        sessionStorage.getItem(
-          "pilotageh-dashboard-filters"
-        );
-
-      return saved
-        ? JSON.parse(saved)
-        : {};
-    } catch (error) {
-      console.error(
-        "Erreur lecture des filtres du Dashboard :",
-        error
-      );
-
-      return {};
-    }
-  }, []);
-
-
-  /*
-   * Le détail applique automatiquement :
-   * - le métier sélectionné
-   * - l'affaire du Dashboard
-   * - le filtre date du Dashboard
-   */
-  const detailFilters = useMemo(
-    () => ({
-      ...dashboardFilters,
-      metier
-    }),
-    [
-      dashboardFilters,
-      metier
-    ]
-  );
+  const affaire =
+    searchParams.get("affaire") || "";
 
 
   const s = useMemo(
@@ -1679,12 +1636,16 @@ function Detail() {
       synthese(
         rows,
         METIERS,
-        detailFilters,
+        {
+          metier,
+          affaire
+        },
         settings
       ),
     [
       rows,
-      detailFilters,
+      metier,
+      affaire,
       settings
     ]
   );
@@ -1706,19 +1667,42 @@ function Detail() {
   }
 
 
+  /*
+   * Retour vers le Dashboard avec le filtre
+   * Affaire toujours présent dans l'URL.
+   */
+  const handleBack = () => {
+
+    const params = {};
+
+    if (affaire) {
+      params.affaire = affaire;
+    }
+
+    nav(
+      `/?${new URLSearchParams(params).toString()}`
+    );
+  };
+
+
   return (
     <>
       <Header
         title={metier}
         subtitle={
           `Détail du métier · analyse au ` +
-          `${settings.dateAnalyse}`
+          `${settings.dateAnalyse}` +
+          (
+            affaire
+              ? ` · Affaire : ${affaire}`
+              : ""
+          )
         }
         actions={
           <button
             className="btn"
-            onClick={() =>
-              nav("/")
+            onClick={
+              handleBack
             }
           >
             <ArrowLeft
@@ -2224,6 +2208,7 @@ function Parametres() {
                 {i + 1}. {m}
 
               </span>
+
             )
           )}
 
