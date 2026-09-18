@@ -87,23 +87,266 @@ import {
 
 
 /* =========================================================
-   OUTILS PDF
+   UTILITAIRES
    ========================================================= */
 
-function pdfText(doc, text, x, y, options = {}) {
+/**
+ * Conversion robuste en nombre.
+ *
+ * Gère notamment :
+ * 1234
+ * "1234"
+ * "1 234"
+ * "1 234,50"
+ * "1234,50"
+ * "1,234.50"
+ * null / undefined / NaN
+ */
+function toNumber(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return 0;
+  }
+
+  if (
+    typeof value === "number" &&
+    Number.isFinite(value)
+  ) {
+    return value;
+  }
+
+  let str = String(value)
+    .trim()
+    .replace(/\u00A0/g, " ")
+    .replace(/\s/g, "");
+
+  if (!str) {
+    return 0;
+  }
+
+  /*
+   * Gestion des formats français.
+   *
+   * 1.234,56
+   * 1 234,56
+   * 1234,56
+   */
+  if (
+    str.includes(",") &&
+    str.includes(".")
+  ) {
+    /*
+     * Si la virgule est après le point :
+     * 1.234,56 => 1234.56
+     */
+    if (
+      str.lastIndexOf(",") >
+      str.lastIndexOf(".")
+    ) {
+      str = str
+        .replace(/\./g, "")
+        .replace(",", ".");
+    } else {
+      /*
+       * 1,234.56
+       */
+      str = str.replace(/,/g, "");
+    }
+  } else if (
+    str.includes(",")
+  ) {
+    str = str.replace(",", ".");
+  }
+
+  const n = Number(str);
+
+  return Number.isFinite(n)
+    ? n
+    : 0;
+}
+
+
+/**
+ * Nombre sécurisé pour le PDF.
+ */
+function safePdfNumber(value) {
+  const n = toNumber(value);
+
+  return Number.isFinite(n)
+    ? n
+    : 0;
+}
+
+
+/**
+ * Format heures compact pour PDF.
+ */
+function pdfHours(value) {
+  const n =
+    safePdfNumber(value);
+
+  return n.toLocaleString(
+    "fr-FR",
+    {
+      minimumFractionDigits:
+        Number.isInteger(n)
+          ? 0
+          : 1,
+      maximumFractionDigits: 1
+    }
+  );
+}
+
+
+/**
+ * Format pourcentage PDF.
+ */
+function pdfPercent(value) {
+  const n =
+    safePdfNumber(value);
+
+  return n.toLocaleString(
+    "fr-FR",
+    {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    }
+  );
+}
+
+
+/**
+ * Format écart avec signe.
+ */
+function pdfSigned(value) {
+  const n =
+    safePdfNumber(value);
+
+  if (n > 0) {
+    return `+${pdfHours(n)}`;
+  }
+
+  if (n < 0) {
+    return `-${pdfHours(Math.abs(n))}`;
+  }
+
+  return "0";
+}
+
+
+/**
+ * Format écart en points.
+ */
+function pdfSignedPoints(value) {
+  const n =
+    safePdfNumber(value);
+
+  if (n > 0) {
+    return `+${pdfPercent(n)}`;
+  }
+
+  if (n < 0) {
+    return `-${pdfPercent(Math.abs(n))}`;
+  }
+
+  return "0";
+}
+
+
+/**
+ * Texte sécurisé.
+ */
+function pdfSafeText(value, fallback = "—") {
+  if (
+    value === null ||
+    value === undefined ||
+    String(value).trim() === ""
+  ) {
+    return fallback;
+  }
+
+  return String(value);
+}
+
+
+/**
+ * Conversion hex -> RGB.
+ */
+function hexToRgb(hex) {
+  const clean =
+    String(hex || "")
+      .replace("#", "")
+      .trim();
+
+  if (
+    clean.length !== 6 ||
+    !/^[0-9a-fA-F]{6}$/.test(
+      clean
+    )
+  ) {
+    return [100, 116, 139];
+  }
+
+  return [
+    parseInt(
+      clean.slice(0, 2),
+      16
+    ),
+    parseInt(
+      clean.slice(2, 4),
+      16
+    ),
+    parseInt(
+      clean.slice(4, 6),
+      16
+    )
+  ];
+}
+
+
+/* =========================================================
+   OUTILS DE DESSIN PDF
+   ========================================================= */
+
+function pdfText(
+  doc,
+  text,
+  x,
+  y,
+  options = {}
+) {
   const {
     size = 8,
     color = [30, 41, 59],
     bold = false,
-    align = "left"
+    align = "left",
+    font = "helvetica"
   } = options;
 
-  doc.setFont("helvetica", bold ? "bold" : "normal");
+  doc.setFont(
+    font,
+    bold
+      ? "bold"
+      : "normal"
+  );
+
   doc.setFontSize(size);
-  doc.setTextColor(...color);
-  doc.text(String(text ?? ""), x, y, {
-    align
-  });
+
+  doc.setTextColor(
+    ...color
+  );
+
+  doc.text(
+    String(text ?? ""),
+    x,
+    y,
+    {
+      align
+    }
+  );
 }
 
 
@@ -116,16 +359,69 @@ function pdfRect(
   fill,
   radius = 0
 ) {
-  doc.setFillColor(...fill);
-  doc.roundedRect(
-    x,
-    y,
-    w,
-    h,
-    radius,
-    radius,
-    "F"
+  doc.setFillColor(
+    ...fill
   );
+
+  if (radius > 0) {
+    doc.roundedRect(
+      x,
+      y,
+      w,
+      h,
+      radius,
+      radius,
+      "F"
+    );
+  } else {
+    doc.rect(
+      x,
+      y,
+      w,
+      h,
+      "F"
+    );
+  }
+}
+
+
+function pdfStrokeRect(
+  doc,
+  x,
+  y,
+  w,
+  h,
+  color = [226, 232, 240],
+  radius = 0,
+  width = 0.3
+) {
+  doc.setDrawColor(
+    ...color
+  );
+
+  doc.setLineWidth(
+    width
+  );
+
+  if (radius > 0) {
+    doc.roundedRect(
+      x,
+      y,
+      w,
+      h,
+      radius,
+      radius,
+      "S"
+    );
+  } else {
+    doc.rect(
+      x,
+      y,
+      w,
+      h,
+      "S"
+    );
+  }
 }
 
 
@@ -138,8 +434,14 @@ function pdfLine(
   color = [226, 232, 240],
   width = 0.3
 ) {
-  doc.setDrawColor(...color);
-  doc.setLineWidth(width);
+  doc.setDrawColor(
+    ...color
+  );
+
+  doc.setLineWidth(
+    width
+  );
+
   doc.line(
     x1,
     y1,
@@ -149,25 +451,191 @@ function pdfLine(
 }
 
 
-function hexToRgb(hex) {
-  const clean =
-    String(hex || "")
-      .replace("#", "");
+/**
+ * Texte dans une largeur donnée.
+ */
+function pdfFitText(
+  doc,
+  text,
+  x,
+  y,
+  maxWidth,
+  options = {}
+) {
+  const {
+    size = 6,
+    color = [30, 41, 59],
+    bold = false,
+    align = "left"
+  } = options;
 
-  if (clean.length !== 6) {
-    return [100, 116, 139];
+  doc.setFont(
+    "helvetica",
+    bold
+      ? "bold"
+      : "normal"
+  );
+
+  doc.setFontSize(
+    size
+  );
+
+  let result =
+    String(text ?? "");
+
+  if (
+    doc.getTextWidth(result) >
+    maxWidth
+  ) {
+    while (
+      result.length > 3 &&
+      doc.getTextWidth(
+        `${result.slice(
+          0,
+          -2
+        )}…`
+      ) >
+        maxWidth
+    ) {
+      result =
+        result.slice(
+          0,
+          -2
+        );
+    }
+
+    result =
+      `${result}…`;
   }
 
-  return [
-    parseInt(clean.slice(0, 2), 16),
-    parseInt(clean.slice(2, 4), 16),
-    parseInt(clean.slice(4, 6), 16)
-  ];
+  pdfText(
+    doc,
+    result,
+    x,
+    y,
+    {
+      size,
+      color,
+      bold,
+      align
+    }
+  );
 }
 
 
 /* =========================================================
-   PDF PROFESSIONNEL
+   COULEURS PDF
+   ========================================================= */
+
+const PDF_COLORS = {
+  navy: [15, 23, 42],
+  blue: [37, 99, 235],
+  blueDark: [30, 64, 175],
+  cyan: [8, 145, 178],
+
+  green: [22, 163, 74],
+  greenLight: [220, 252, 231],
+
+  orange: [234, 88, 12],
+  orangeLight: [255, 237, 213],
+
+  red: [220, 38, 38],
+  redLight: [254, 226, 226],
+
+  slate: [71, 85, 105],
+  muted: [100, 116, 139],
+
+  border: [226, 232, 240],
+  grid: [241, 245, 249],
+
+  white: [255, 255, 255],
+  background: [248, 250, 252],
+
+  header: [30, 41, 59]
+};
+
+
+/* =========================================================
+   STATUT PDF
+   ========================================================= */
+
+function getStatusColor(
+  statut
+) {
+  if (
+    statut === "vert"
+  ) {
+    return PDF_COLORS.green;
+  }
+
+  if (
+    statut === "orange"
+  ) {
+    return PDF_COLORS.orange;
+  }
+
+  if (
+    statut === "rouge"
+  ) {
+    return PDF_COLORS.red;
+  }
+
+  return PDF_COLORS.muted;
+}
+
+
+function getStatusLight(
+  statut
+) {
+  if (
+    statut === "vert"
+  ) {
+    return PDF_COLORS.greenLight;
+  }
+
+  if (
+    statut === "orange"
+  ) {
+    return PDF_COLORS.orangeLight;
+  }
+
+  if (
+    statut === "rouge"
+  ) {
+    return PDF_COLORS.redLight;
+  }
+
+  return [241, 245, 249];
+}
+
+
+function getStatusLabel(
+  statut
+) {
+  if (
+    statut === "vert"
+  ) {
+    return "Favorable";
+  }
+
+  if (
+    statut === "orange"
+  ) {
+    return "Vigilance";
+  }
+
+  if (
+    statut === "rouge"
+  ) {
+    return "Dépassement";
+  }
+
+  return "Non défini";
+}
+
+
+/* =========================================================
+   PDF PROFESSIONNEL — A4 PAYSAGE 1 PAGE
    ========================================================= */
 
 function exportProfessionalPDF(
@@ -175,174 +643,433 @@ function exportProfessionalPDF(
   total,
   meta = {}
 ) {
-  const doc = new jsPDF({
-    orientation: "landscape",
-    unit: "mm",
-    format: "a4"
-  });
+  const doc =
+    new jsPDF({
+      orientation:
+        "landscape",
+      unit: "mm",
+      format: "a4",
+      compress: true
+    });
 
   const PAGE_W = 297;
   const PAGE_H = 210;
 
-  const M = 8;
+  const M = 7;
 
-  const blue = [37, 99, 235];
-  const dark = [15, 23, 42];
-  const text = [30, 41, 59];
-  const muted = [100, 116, 139];
-  const border = [226, 232, 240];
-  const light = [248, 250, 252];
-  const green = [22, 163, 74];
-  const orange = [234, 88, 12];
-  const red = [220, 38, 38];
+  const {
+    navy,
+    blue,
+    blueDark,
+    cyan,
+    green,
+    greenLight,
+    orange,
+    orangeLight,
+    red,
+    redLight,
+    slate,
+    muted,
+    border,
+    grid,
+    white,
+    background
+  } = PDF_COLORS;
+
 
   /* =======================================================
-     PAGE
+     NORMALISATION DES DONNÉES
      ======================================================= */
 
-  doc.setFillColor(
-    248,
-    250,
-    252
-  );
+  const rows =
+    Array.isArray(lignes)
+      ? lignes.map(
+          r => ({
+            ...r,
 
-  doc.rect(
+            encouru:
+              safePdfNumber(
+                r.encouru
+              ),
+
+            budgetDate:
+              safePdfNumber(
+                r.budgetDate
+              ),
+
+            budgetAlloue:
+              safePdfNumber(
+                r.budgetAlloue
+              ),
+
+            reste:
+              safePdfNumber(
+                r.reste
+              ),
+
+            consoReelle:
+              safePdfNumber(
+                r.consoReelle
+              ),
+
+            consoDate:
+              safePdfNumber(
+                r.consoDate
+              ),
+
+            ecartH:
+              safePdfNumber(
+                r.ecartH
+              ),
+
+            ecartPoints:
+              safePdfNumber(
+                r.ecartPoints
+              )
+          })
+        )
+      : [];
+
+
+  const totalSafe = {
+    ...total,
+
+    budgetAlloue:
+      safePdfNumber(
+        total?.budgetAlloue
+      ),
+
+    encouru:
+      safePdfNumber(
+        total?.encouru
+      ),
+
+    budgetDate:
+      safePdfNumber(
+        total?.budgetDate
+      ),
+
+    reste:
+      safePdfNumber(
+        total?.reste
+      ),
+
+    consoReelle:
+      safePdfNumber(
+        total?.consoReelle
+      ),
+
+    consoDate:
+      safePdfNumber(
+        total?.consoDate
+      ),
+
+    ecartH:
+      safePdfNumber(
+        total?.ecartH
+      ),
+
+    ecartPoints:
+      safePdfNumber(
+        total?.ecartPoints
+      )
+  };
+
+
+  /* =======================================================
+     INFORMATIONS DE CONTEXTE
+     ======================================================= */
+
+  const affaire =
+    pdfSafeText(
+      meta.affaire,
+      ""
+    );
+
+  const metierFiltre =
+    pdfSafeText(
+      meta.metier,
+      ""
+    );
+
+  const dateAnalyse =
+    pdfSafeText(
+      meta.date,
+      "—"
+    );
+
+
+  const contexte =
+    affaire
+      ? `Affaire : ${affaire}`
+      : "Toutes les affaires";
+
+  const contexteMetier =
+    metierFiltre
+      ? `Métier : ${metierFiltre}`
+      : "Tous les métiers";
+
+
+  /* =======================================================
+     INDICATEURS
+     ======================================================= */
+
+  const nbVigilance =
+    rows.filter(
+      r =>
+        r.statut ===
+          "orange" ||
+        r.statut ===
+          "rouge"
+    ).length;
+
+  const nbRouge =
+    rows.filter(
+      r =>
+        r.statut ===
+        "rouge"
+    ).length;
+
+  const sortedByGap =
+    [...rows].sort(
+      (a, b) =>
+        b.ecartH -
+        a.ecartH
+    );
+
+  const topProblem =
+    sortedByGap[0];
+
+
+  /* =======================================================
+     FOND
+     ======================================================= */
+
+  pdfRect(
+    doc,
     0,
     0,
     PAGE_W,
     PAGE_H,
-    "F"
+    background
   );
 
 
   /* =======================================================
-     EN-TÊTE
+     HEADER
      ======================================================= */
 
-  doc.setFillColor(
-    ...blue
-  );
-
-  doc.rect(
+  pdfRect(
+    doc,
     0,
     0,
     PAGE_W,
-    20,
-    "F"
+    25,
+    navy
   );
+
+
+  /*
+   * Accent graphique
+   */
+  pdfRect(
+    doc,
+    0,
+    0,
+    5,
+    25,
+    blue
+  );
+
 
   pdfText(
     doc,
     "PILOTAGE H",
-    M,
+    M + 3,
     9,
     {
-      size: 13,
-      color: [255, 255, 255],
+      size: 14,
+      color: white,
       bold: true
     }
   );
+
 
   pdfText(
     doc,
     "RAPPORT DE PILOTAGE DES HEURES",
-    M,
-    15,
+    M + 3,
+    16,
     {
-      size: 7,
-      color: [219, 234, 254],
+      size: 6.5,
+      color: [
+        191,
+        219,
+        254
+      ],
       bold: true
     }
   );
 
+
   pdfText(
     doc,
-    meta.date || "—",
+    dateAnalyse,
     PAGE_W - M,
     9,
     {
       size: 8,
-      color: [255, 255, 255],
+      color: white,
       bold: true,
       align: "right"
     }
   );
 
+
   pdfText(
     doc,
-    meta.affaire
-      ? `Affaire : ${meta.affaire}`
-      : "Toutes les affaires",
+    contexte,
     PAGE_W - M,
     15,
     {
-      size: 7,
-      color: [219, 234, 254],
+      size: 6.5,
+      color: [
+        191,
+        219,
+        254
+      ],
+      align: "right"
+    }
+  );
+
+
+  pdfText(
+    doc,
+    contexteMetier,
+    PAGE_W - M,
+    21,
+    {
+      size: 5.5,
+      color: [
+        148,
+        163,
+        184
+      ],
       align: "right"
     }
   );
 
 
   /* =======================================================
-     KPI
+     KPI — 6 CARTES
      ======================================================= */
 
-  const kpiY = 24;
-  const kpiH = 18;
-  const gap = 3;
+  const kpiY = 29;
+  const kpiH = 19;
+  const kpiGap = 3;
 
   const kpiW =
-    (PAGE_W - 2 * M - 5 * gap) / 6;
+    (
+      PAGE_W -
+      2 * M -
+      5 * kpiGap
+    ) / 6;
+
 
   const kpis = [
     {
-      label: "BUDGET ALLOUÉ",
-      value: `${fmt(total.budgetAlloue)} h`,
-      color: [71, 85, 105]
-    },
-    {
-      label: "HEURES CONSOMMÉES",
-      value: `${fmt(total.encouru)} h`,
-      color: blue
-    },
-    {
-      label: "BUDGET À DATE",
-      value: `${fmt(total.budgetDate)} h`,
-      color: green
-    },
-    {
-      label: "ÉCART HEURES",
-      value: sign(total.ecartH),
+      label:
+        "BUDGET ALLOUÉ",
+      value:
+        `${pdfHours(
+          totalSafe.budgetAlloue
+        )} h`,
       color:
-        total.ecartH > 0
+        slate
+    },
+
+    {
+      label:
+        "HEURES CONSOMMÉES",
+      value:
+        `${pdfHours(
+          totalSafe.encouru
+        )} h`,
+      color:
+        blue
+    },
+
+    {
+      label:
+        "BUDGET À DATE",
+      value:
+        `${pdfHours(
+          totalSafe.budgetDate
+        )} h`,
+      color:
+        green
+    },
+
+    {
+      label:
+        "ÉCART HEURES",
+      value:
+        `${pdfSigned(
+          totalSafe.ecartH
+        )} h`,
+      color:
+        totalSafe.ecartH > 0
           ? red
           : green
     },
+
     {
-      label: "CONSOMMATION",
-      value: `${fmt1(total.consoReelle)} %`,
-      color: orange
-    },
-    {
-      label: "ÉCART THÉORIQUE",
-      value: `${sign(total.ecartPoints)} pts`,
+      label:
+        "CONSOMMATION",
+      value:
+        `${pdfPercent(
+          totalSafe.consoReelle
+        )} %`,
       color:
-        total.ecartPoints >
-        (meta.orange ?? 10)
+        orange
+    },
+
+    {
+      label:
+        "ÉCART AU THÉORIQUE",
+      value:
+        `${pdfSignedPoints(
+          totalSafe.ecartPoints
+        )} pts`,
+      color:
+        totalSafe.ecartPoints >
+        safePdfNumber(
+          meta.orange
+        )
           ? red
-          : total.ecartPoints >
-            (meta.green ?? 5)
+          : totalSafe.ecartPoints >
+            safePdfNumber(
+              meta.green
+            )
             ? orange
             : green
     }
   ];
 
+
   kpis.forEach(
-    (kpi, index) => {
+    (
+      kpi,
+      index
+    ) => {
       const x =
         M +
         index *
-          (kpiW + gap);
+          (
+            kpiW +
+            kpiGap
+          );
+
 
       pdfRect(
         doc,
@@ -350,44 +1077,43 @@ function exportProfessionalPDF(
         kpiY,
         kpiW,
         kpiH,
-        [255, 255, 255],
+        white,
         2
       );
 
-      doc.setFillColor(
-        ...kpi.color
-      );
 
-      doc.roundedRect(
+      pdfRect(
+        doc,
         x,
         kpiY,
-        1.5,
+        1.8,
         kpiH,
-        0.75,
-        0.75,
-        "F"
+        kpi.color,
+        0.8
       );
+
 
       pdfText(
         doc,
         kpi.label,
-        x + 4,
+        x + 5,
         kpiY + 6,
         {
-          size: 5.5,
+          size: 4.6,
           color: muted,
           bold: true
         }
       );
 
+
       pdfText(
         doc,
         kpi.value,
-        x + 4,
+        x + 5,
         kpiY + 14,
         {
-          size: 10,
-          color: dark,
+          size: 9.5,
+          color: navy,
           bold: true
         }
       );
@@ -396,28 +1122,39 @@ function exportProfessionalPDF(
 
 
   /* =======================================================
-     TITRE SECTION PRINCIPALE
+     SECTION TITRE
      ======================================================= */
+
+  const sectionY = 53;
 
   pdfText(
     doc,
-    "SYNTHÈSE PAR MÉTIER",
+    "SYNTHÈSE DE PILOTAGE",
     M,
-    48,
+    sectionY,
     {
       size: 8,
-      color: dark,
+      color: navy,
       bold: true
     }
   );
 
+
   pdfText(
     doc,
-    `${lignes.length} métier(s) suivi(s)`,
+    `${rows.length} métier${
+      rows.length > 1
+        ? "s"
+        : ""
+    } analysé${
+      rows.length > 1
+        ? "s"
+        : ""
+    }`,
     PAGE_W - M,
-    48,
+    sectionY,
     {
-      size: 6,
+      size: 5.5,
       color: muted,
       align: "right"
     }
@@ -425,44 +1162,65 @@ function exportProfessionalPDF(
 
 
   /* =======================================================
-     TABLEAU
+     TABLEAU + ANALYSE
      ======================================================= */
 
+  const mainY = 57;
+
   const tableX = M;
-  const tableY = 51;
-  const tableW = 151;
-  const tableH = 74;
+  const tableW = 165;
+
+  const analysisX =
+    tableX +
+    tableW +
+    4;
+
+  const analysisW =
+    PAGE_W -
+    M -
+    analysisX;
+
+  const mainH = 66;
+
+
+  /* =======================================================
+     TABLEAU
+     ======================================================= */
 
   pdfRect(
     doc,
     tableX,
-    tableY,
+    mainY,
     tableW,
-    tableH,
-    [255, 255, 255],
+    mainH,
+    white,
     2
   );
 
+
+  /*
+   * Colonnes
+   */
   const cols = [
     {
       label: "Métier",
-      width: 29
+      width: 34
     },
     {
       label: "Cons.",
-      width: 18
-    },
-    {
-      label: "B. date",
-      width: 18
-    },
-    {
-      label: "B. alloué",
       width: 19
     },
     {
+      label: "B. date",
+      width: 19
+    },
+    {
+      label: "B. alloué",
+      width: 20
+    },
+    {
       label: "Reste",
-      width: 18
+      width: 19
     },
     {
       label: "Conso.",
@@ -470,33 +1228,36 @@ function exportProfessionalPDF(
     },
     {
       label: "Écart h",
-      width: 17
+      width: 18
     },
     {
       label: "Écart pts",
-      width: 17
-    },
-    {
-      label: "Statut",
-      width: 18
+      width: 19
     }
   ];
 
-  let cx = tableX;
 
-  doc.setFillColor(
-    241,
-    245,
-    249
-  );
+  const headerH = 8;
 
-  doc.rect(
+
+  pdfRect(
+    doc,
     tableX,
-    tableY,
+    mainY,
     tableW,
-    7,
-    "F"
+    headerH,
+    [
+      241,
+      245,
+      249
+    ],
+    2
   );
+
+
+  let cx =
+    tableX;
+
 
   cols.forEach(
     col => {
@@ -504,374 +1265,575 @@ function exportProfessionalPDF(
         doc,
         col.label,
         cx + 1.5,
-        tableY + 4.7,
+        mainY + 5.2,
         {
-          size: 4.5,
+          size: 4.3,
           color: muted,
           bold: true
         }
       );
 
-      cx += col.width;
+      cx +=
+        col.width;
     }
   );
 
 
-  const rowHeight =
-    lignes.length > 18
-      ? 3.15
-      : 3.55;
+  /*
+   * Hauteur dynamique.
+   *
+   * On réserve environ 52 mm au tableau.
+   * Même avec beaucoup de métiers, les lignes
+   * sont compactées pour rester sur une page.
+   */
+  const availableRowsH =
+    mainH -
+    headerH -
+    6;
 
-  const maxRows =
-    Math.floor(
-      (tableH - 10) /
-        rowHeight
+  const maxRowHeight = 4.2;
+
+  const minRowHeight =
+    rows.length > 18
+      ? 2.65
+      : rows.length > 14
+        ? 3.05
+        : 3.6;
+
+  const calculatedRowH =
+    rows.length > 0
+      ? Math.min(
+          maxRowHeight,
+          availableRowsH /
+            rows.length
+        )
+      : minRowHeight;
+
+  const rowH =
+    Math.max(
+      2.35,
+      Math.min(
+        calculatedRowH,
+        minRowHeight
+      )
     );
+
 
   const displayRows =
-    lignes.slice(
-      0,
-      maxRows
-    );
+    rows;
+
 
   displayRows.forEach(
-    (r, index) => {
+    (
+      r,
+      index
+    ) => {
       const y =
-        tableY +
-        7 +
+        mainY +
+        headerH +
         index *
-          rowHeight;
+          rowH;
 
+
+      /*
+       * Alternance
+       */
       if (
         index % 2 === 1
       ) {
-        doc.setFillColor(
-          248,
-          250,
-          252
-        );
-
-        doc.rect(
+        pdfRect(
+          doc,
           tableX,
           y,
           tableW,
-          rowHeight,
-          "F"
+          rowH,
+          [
+            248,
+            250,
+            252
+          ]
         );
       }
+
 
       let x =
         tableX;
 
+
       const values = [
-        r.metier,
-        fmt(r.encouru),
-        fmt(r.budgetDate),
-        fmt(r.budgetAlloue),
-        fmt(r.reste),
-        `${fmt1(r.consoReelle)}%`,
-        sign(r.ecartH),
-        `${sign(r.ecartPoints)}`,
-        r.statut
+        pdfSafeText(
+          r.metier
+        ),
+
+        pdfHours(
+          r.encouru
+        ),
+
+        pdfHours(
+          r.budgetDate
+        ),
+
+        pdfHours(
+          r.budgetAlloue
+        ),
+
+        pdfHours(
+          r.reste
+        ),
+
+        `${pdfPercent(
+          r.consoReelle
+        )}%`,
+
+        `${pdfSigned(
+          r.ecartH
+        )}`,
+
+        `${pdfSignedPoints(
+          r.ecartPoints
+        )}`
       ];
 
+
       values.forEach(
-        (value, colIndex) => {
+        (
+          value,
+          colIndex
+        ) => {
 
           let color =
-            text;
+            slate;
 
           let bold =
             colIndex === 0;
 
+
+          /*
+           * Couleur des écarts
+           */
           if (
-            colIndex === 8
+            colIndex === 6
           ) {
             color =
-              r.statut === "vert"
-                ? green
-                : r.statut ===
-                  "orange"
-                  ? orange
-                  : red;
+              r.ecartH > 0
+                ? red
+                : green;
 
             bold = true;
           }
 
-          pdfText(
+
+          if (
+            colIndex === 7
+          ) {
+            color =
+              r.ecartPoints >
+              0
+                ? orange
+                : green;
+
+            bold = true;
+          }
+
+
+          if (
+            colIndex === 5
+          ) {
+            color =
+              blue;
+          }
+
+
+          pdfFitText(
             doc,
-            String(value),
+            value,
             x + 1.5,
-            y + rowHeight - 1,
+            y +
+              rowH -
+              0.9,
+            cols[
+              colIndex
+            ].width -
+              3,
             {
               size:
-                colIndex === 0
-                  ? 4.2
-                  : 4.0,
+                colIndex ===
+                0
+                  ? 4.1
+                  : 3.8,
               color,
               bold
             }
           );
 
+
           x +=
-            cols[colIndex]
-              .width;
+            cols[
+              colIndex
+            ].width;
         }
       );
     }
   );
 
 
-  /* =======================================================
-     TOTAL
-     ======================================================= */
+  /*
+   * Ligne TOTAL
+   */
+  const totalRowY =
+    mainY +
+    headerH +
+    rows.length *
+      rowH;
 
-  const totalY =
-    tableY +
-    7 +
-    displayRows.length *
-      rowHeight;
 
   if (
-    totalY <
-    tableY +
-      tableH -
-      2
+    totalRowY +
+      rowH <=
+    mainY +
+      mainH
   ) {
-    doc.setFillColor(
-      226,
-      232,
-      240
+
+    pdfRect(
+      doc,
+      tableX,
+      totalRowY,
+      tableW,
+      rowH + 0.5,
+      [
+        226,
+        232,
+        240
+      ]
     );
 
-    doc.rect(
-      tableX,
-      totalY,
-      tableW,
-      rowHeight + 1,
-      "F"
-    );
 
     let x =
       tableX;
 
-    const values = [
+
+    const totalValues = [
       "TOTAL",
-      fmt(total.encouru),
-      fmt(total.budgetDate),
-      fmt(total.budgetAlloue),
-      fmt(total.reste),
-      `${fmt1(total.consoReelle)}%`,
-      sign(total.ecartH),
-      `${sign(total.ecartPoints)}`,
-      total.statut
+
+      pdfHours(
+        totalSafe.encouru
+      ),
+
+      pdfHours(
+        totalSafe.budgetDate
+      ),
+
+      pdfHours(
+        totalSafe.budgetAlloue
+      ),
+
+      pdfHours(
+        totalSafe.reste
+      ),
+
+      `${pdfPercent(
+        totalSafe.consoReelle
+      )}%`,
+
+      pdfSigned(
+        totalSafe.ecartH
+      ),
+
+      pdfSignedPoints(
+        totalSafe.ecartPoints
+      )
     ];
 
-    values.forEach(
-      (value, colIndex) => {
+
+    totalValues.forEach(
+      (
+        value,
+        colIndex
+      ) => {
 
         const color =
-          colIndex === 8
+          colIndex === 6
             ? (
-                total.statut ===
-                "vert"
-                  ? green
-                  : total.statut ===
-                    "orange"
-                    ? orange
-                    : red
+                totalSafe.ecartH >
+                0
+                  ? red
+                  : green
               )
-            : dark;
+            : colIndex === 7
+              ? (
+                  totalSafe.ecartPoints >
+                  0
+                    ? orange
+                    : green
+                )
+              : navy;
 
-        pdfText(
+
+        pdfFitText(
           doc,
-          String(value),
+          value,
           x + 1.5,
-          totalY +
-            rowHeight,
+          totalRowY +
+            rowH -
+            0.8,
+          cols[
+            colIndex
+          ].width -
+            3,
           {
-            size: 4.1,
+            size: 3.9,
             color,
             bold: true
           }
         );
 
+
         x +=
-          cols[colIndex]
-            .width;
+          cols[
+            colIndex
+          ].width;
       }
     );
   }
 
 
   /* =======================================================
-     ZONE ANALYSE
+     BLOC ANALYSE
      ======================================================= */
-
-  const analysisX =
-    M + tableW + 4;
-
-  const analysisY = 51;
-
-  const analysisW =
-    PAGE_W -
-    M -
-    analysisX;
-
-  const analysisH = 74;
 
   pdfRect(
     doc,
     analysisX,
-    analysisY,
+    mainY,
     analysisW,
-    analysisH,
-    [255, 255, 255],
+    mainH,
+    white,
     2
   );
+
 
   pdfText(
     doc,
     "ANALYSE DE LA SITUATION",
     analysisX + 5,
-    analysisY + 8,
+    mainY + 8,
     {
       size: 7,
-      color: dark,
+      color: navy,
       bold: true
     }
   );
 
+
   pdfLine(
     doc,
     analysisX + 5,
-    analysisY + 11,
+    mainY + 11,
     analysisX +
       analysisW -
       5,
-    analysisY + 11
+    mainY + 11,
+    border,
+    0.3
   );
 
 
-  let analysisText = "";
+  /*
+   * Message principal
+   */
+  let analysisMessage;
+
 
   if (
-    total.ecartH > 0
+    totalSafe.ecartH > 0
   ) {
-    analysisText =
-      `La consommation cumulée est supérieure ` +
-      `au budget à date de ${fmt(
-        total.ecartH
+    analysisMessage =
+      `La consommation est supérieure au budget à date de ${pdfHours(
+        totalSafe.ecartH
       )} h.`;
-  } else {
-    analysisText =
-      `La consommation cumulée reste inférieure ` +
-      `au budget à date de ${fmt(
+  } else if (
+    totalSafe.ecartH < 0
+  ) {
+    analysisMessage =
+      `La consommation reste inférieure au budget à date de ${pdfHours(
         Math.abs(
-          total.ecartH
+          totalSafe.ecartH
         )
       )} h.`;
+  } else {
+    analysisMessage =
+      "La consommation est alignée avec le budget à date.";
   }
 
 
-  const lines =
+  const messageLines =
     doc.splitTextToSize(
-      analysisText,
+      analysisMessage,
       analysisW - 10
     );
 
-  lines.forEach(
-    (line, i) => {
+
+  messageLines
+    .slice(0, 3)
+    .forEach(
+      (
+        line,
+        i
+      ) => {
+        pdfText(
+          doc,
+          line,
+          analysisX + 5,
+          mainY +
+            18 +
+            i * 4,
+          {
+            size: 5.6,
+            color:
+              totalSafe.ecartH >
+              0
+                ? red
+                : green,
+            bold: true
+          }
+        );
+      }
+    );
+
+
+  /*
+   * Mini KPI analyse
+   */
+  const miniY =
+    mainY + 31;
+
+  const miniGap = 3;
+
+  const miniW =
+    (
+      analysisW -
+      10 -
+      2 * miniGap
+    ) / 3;
+
+
+  const mini = [
+    {
+      label:
+        "Conso. réelle",
+      value:
+        `${pdfPercent(
+          totalSafe.consoReelle
+        )}%`,
+      color:
+        blue
+    },
+
+    {
+      label:
+        "Conso. à date",
+      value:
+        `${pdfPercent(
+          totalSafe.consoDate
+        )}%`,
+      color:
+        orange
+    },
+
+    {
+      label:
+        "Écart",
+      value:
+        `${pdfSignedPoints(
+          totalSafe.ecartPoints
+        )}`,
+      color:
+        totalSafe.ecartPoints >
+        0
+          ? red
+          : green
+    }
+  ];
+
+
+  mini.forEach(
+    (
+      item,
+      index
+    ) => {
+      const x =
+        analysisX +
+        5 +
+        index *
+          (
+            miniW +
+            miniGap
+          );
+
+
+      pdfRect(
+        doc,
+        x,
+        miniY,
+        miniW,
+        17,
+        [
+          248,
+          250,
+          252
+        ],
+        1.5
+      );
+
+
       pdfText(
         doc,
-        line,
-        analysisX + 5,
-        analysisY +
-          18 +
-          i * 4,
+        item.label,
+        x + 3,
+        miniY + 5,
         {
-          size: 6,
-          color: text
+          size: 4.1,
+          color: muted,
+          bold: true
+        }
+      );
+
+
+      pdfText(
+        doc,
+        item.value,
+        x + 3,
+        miniY + 12.5,
+        {
+          size: 7.5,
+          color: item.color,
+          bold: true
         }
       );
     }
   );
 
 
+  /*
+   * Situation métiers
+   */
+  const situationY =
+    mainY + 52;
+
+
   pdfText(
     doc,
-    "Consommation réelle",
+    `${nbVigilance} métier${
+      nbVigilance > 1
+        ? "s"
+        : ""
+    } en vigilance ou dépassement`,
     analysisX + 5,
-    analysisY + 33,
+    situationY,
     {
-      size: 5.5,
-      color: muted
-    }
-  );
-
-  pdfText(
-    doc,
-    `${fmt1(
-      total.consoReelle
-    )} %`,
-    analysisX + 5,
-    analysisY + 40,
-    {
-      size: 10,
-      color: blue,
-      bold: true
-    }
-  );
-
-
-  pdfText(
-    doc,
-    "Consommation à date",
-    analysisX + 55,
-    analysisY + 33,
-    {
-      size: 5.5,
-      color: muted
-    }
-  );
-
-  pdfText(
-    doc,
-    `${fmt1(
-      total.consoDate
-    )} %`,
-    analysisX + 55,
-    analysisY + 40,
-    {
-      size: 10,
-      color: orange,
-      bold: true
-    }
-  );
-
-
-  pdfText(
-    doc,
-    "Écart",
-    analysisX + 105,
-    analysisY + 33,
-    {
-      size: 5.5,
-      color: muted
-    }
-  );
-
-  pdfText(
-    doc,
-    `${sign(
-      total.ecartPoints
-    )} pts`,
-    analysisX + 105,
-    analysisY + 40,
-    {
-      size: 10,
+      size: 5,
       color:
-        total.ecartPoints > 0
+        nbVigilance > 0
           ? orange
           : green,
       bold: true
@@ -879,87 +1841,75 @@ function exportProfessionalPDF(
   );
 
 
-  /* =======================================================
-     BARRE DE STATUT
-     ======================================================= */
-
-  const barX =
-    analysisX + 5;
-
-  const barY =
-    analysisY + 48;
-
-  const barW =
-    analysisW - 10;
-
-  const barH = 6;
-
-  const budget =
-    Math.max(
-      Number(
-        total.budgetAlloue
-      ) || 0,
-      1
+  if (
+    nbRouge > 0
+  ) {
+    pdfText(
+      doc,
+      `${nbRouge} dépassement${
+        nbRouge > 1
+          ? "s"
+          : ""
+      } identifié${
+        nbRouge > 1
+          ? "s"
+          : ""
+      }`,
+      analysisX + 5,
+      situationY + 6,
+      {
+        size: 5,
+        color: red,
+        bold: true
+      }
     );
-
-  const consumedRatio =
-    Math.max(
-      0,
-      Math.min(
-        1,
-        Number(
-          total.encouru
-        ) /
-          budget
-      )
+  } else {
+    pdfText(
+      doc,
+      "Aucun dépassement critique identifié",
+      analysisX + 5,
+      situationY + 6,
+      {
+        size: 5,
+        color: green,
+        bold: true
+      }
     );
+  }
 
-  pdfRect(
-    doc,
-    barX,
-    barY,
-    barW,
-    barH,
-    [226, 232, 240],
-    2
-  );
 
-  pdfRect(
-    doc,
-    barX,
-    barY,
-    barW *
-      consumedRatio,
-    barH,
-    total.encouru >
-      total.budgetAlloue
-      ? red
-      : blue,
-    2
-  );
+  /*
+   * Métier le plus en écart
+   */
+  if (
+    topProblem &&
+    topProblem.ecartH > 0
+  ) {
 
-  pdfText(
-    doc,
-    `${fmt(
-      total.encouru
-    )} h consommées / ${fmt(
-      total.budgetAlloue
-    )} h`,
-    barX,
-    barY + 12,
-    {
-      size: 5,
-      color: muted
-    }
-  );
+    pdfFitText(
+      doc,
+      `Point d'attention : ${topProblem.metier} (+${pdfHours(
+        topProblem.ecartH
+      )} h)`,
+      analysisX + 5,
+      situationY + 12,
+      analysisW - 10,
+      {
+        size: 4.7,
+        color: red,
+        bold: true
+      }
+    );
+  }
 
 
   /* =======================================================
-     HISTOGRAMMES
+     SECTION GRAPHIQUES
      ======================================================= */
 
   const chartSectionY =
-    129;
+    128;
+
 
   pdfText(
     doc,
@@ -968,32 +1918,30 @@ function exportProfessionalPDF(
     chartSectionY,
     {
       size: 8,
-      color: dark,
+      color: navy,
       bold: true
     }
   );
 
 
+  pdfText(
+    doc,
+    "Lecture directe de la consommation et de la trajectoire budgétaire",
+    PAGE_W - M,
+    chartSectionY,
+    {
+      size: 5,
+      color: muted,
+      align: "right"
+    }
+  );
+
+
   /* =======================================================
-     CHART 1
-     Budget / consommé
+     FONCTION GRAPHIQUE HORIZONTAL
      ======================================================= */
 
-  const chartY =
-    chartSectionY + 4;
-
-  const chartGap = 4;
-
-  const chartW =
-    (PAGE_W -
-      2 * M -
-      chartGap) /
-    2;
-
-  const chartH = 67;
-
-
-  function drawBarChart(
+  function drawHorizontalBarChart({
     x,
     y,
     width,
@@ -1006,7 +1954,7 @@ function exportProfessionalPDF(
     secondColor,
     firstLabel,
     secondLabel
-  ) {
+  }) {
 
     pdfRect(
       doc,
@@ -1014,10 +1962,14 @@ function exportProfessionalPDF(
       y,
       width,
       height,
-      [255, 255, 255],
+      white,
       2
     );
 
+
+    /*
+     * Titre
+     */
     pdfText(
       doc,
       title,
@@ -1025,74 +1977,85 @@ function exportProfessionalPDF(
       y + 7,
       {
         size: 6.5,
-        color: dark,
+        color: navy,
         bold: true
       }
     );
 
-    /* Légende */
 
+    /*
+     * Légende
+     */
     const legendY =
       y + 6;
+
 
     doc.setFillColor(
       ...firstColor
     );
 
     doc.rect(
-      x + width - 62,
+      x + width - 82,
       legendY - 3,
       3,
       3,
       "F"
     );
 
+
     pdfText(
       doc,
       firstLabel,
-      x + width - 57,
+      x + width - 77,
       legendY,
       {
-        size: 4.5,
+        size: 4.2,
         color: muted
       }
     );
+
 
     doc.setFillColor(
       ...secondColor
     );
 
     doc.rect(
-      x + width - 31,
+      x + width - 42,
       legendY - 3,
       3,
       3,
       "F"
     );
 
+
     pdfText(
       doc,
       secondLabel,
-      x + width - 26,
+      x + width - 37,
       legendY,
       {
-        size: 4.5,
+        size: 4.2,
         color: muted
       }
     );
 
 
+    /*
+     * Zone graphique
+     */
+    const labelW = 37;
+
     const left =
-      x + 31;
+      x + labelW;
 
     const right =
-      x + width - 5;
+      x + width - 7;
 
     const top =
       y + 12;
 
     const bottom =
-      y + height - 7;
+      y + height - 5;
 
     const plotW =
       right - left;
@@ -1101,104 +2064,210 @@ function exportProfessionalPDF(
       bottom - top;
 
 
+    /*
+     * Valeurs
+     */
     const maxValue =
       Math.max(
         1,
         ...rows.flatMap(
           r => [
-            Number(
-              r[firstKey]
-            ) || 0,
-            Number(
-              r[secondKey]
-            ) || 0
+            Math.max(
+              0,
+              safePdfNumber(
+                r[firstKey]
+              )
+            ),
+
+            Math.max(
+              0,
+              safePdfNumber(
+                r[secondKey]
+              )
+            )
           ]
         )
       );
 
 
-    const rowH =
-      plotH /
-      Math.max(
-        rows.length,
-        1
+    /*
+     * Échelle agréable.
+     */
+    const niceMax =
+      Math.ceil(
+        maxValue /
+          (
+            maxValue > 1000
+              ? 500
+              : maxValue > 500
+                ? 100
+                : maxValue > 100
+                  ? 50
+                  : maxValue > 20
+                    ? 10
+                    : 5
+          )
+      ) *
+      (
+        maxValue > 1000
+          ? 500
+          : maxValue > 500
+            ? 100
+            : maxValue > 100
+              ? 50
+              : maxValue > 20
+                ? 10
+                : 5
       );
 
 
-    /* grille */
+    const axisMax =
+      Math.max(
+        niceMax,
+        maxValue
+      );
 
-    [0, 0.25, 0.5, 0.75, 1].forEach(
-      ratio => {
 
-        const gx =
-          left +
-          plotW *
-            ratio;
+    /*
+     * Grille
+     */
+    const gridSteps = 4;
 
-        pdfLine(
-          doc,
-          gx,
-          top,
-          gx,
-          bottom,
-          [241, 245, 249],
-          0.2
-        );
 
-        pdfText(
-          doc,
-          fmt(
-            maxValue *
-              ratio
-          ),
-          gx,
-          top - 1.5,
-          {
-            size: 3.5,
-            color: muted,
-            align:
-              ratio === 0
-                ? "left"
-                : ratio === 1
-                  ? "right"
-                  : "center"
-          }
-        );
-      }
-    );
+    for (
+      let i = 0;
+      i <= gridSteps;
+      i++
+    ) {
+
+      const ratio =
+        i /
+        gridSteps;
+
+      const gx =
+        left +
+        plotW *
+          ratio;
+
+
+      pdfLine(
+        doc,
+        gx,
+        top,
+        gx,
+        bottom,
+        grid,
+        0.2
+      );
+
+
+      pdfText(
+        doc,
+        pdfHours(
+          axisMax *
+            ratio
+        ),
+        gx,
+        top - 1.3,
+        {
+          size: 3.2,
+          color: muted,
+          align:
+            i === 0
+              ? "left"
+              : i === gridSteps
+                ? "right"
+                : "center"
+        }
+      );
+    }
+
+
+    /*
+     * Aucun métier
+     */
+    if (
+      rows.length === 0
+    ) {
+
+      pdfText(
+        doc,
+        "Aucune donnée disponible",
+        x +
+          width / 2,
+        y +
+          height / 2,
+        {
+          size: 6,
+          color: muted,
+          align: "center"
+        }
+      );
+
+      return;
+    }
+
+
+    /*
+     * Hauteur par métier.
+     *
+     * Tous les métiers sont rendus.
+     */
+    const rowH =
+      plotH /
+      rows.length;
 
 
     rows.forEach(
-      (r, index) => {
+      (
+        r,
+        index
+      ) => {
 
         const rowY =
           top +
           index *
             rowH;
 
-        const labelY =
-          rowY +
-          rowH *
-            0.7;
 
-        const label =
-          String(
-            r.metier
+        /*
+         * Ligne de fond très légère
+         */
+        if (
+          index % 2 === 1
+        ) {
+          pdfRect(
+            doc,
+            left,
+            rowY,
+            plotW,
+            rowH,
+            [
+              252,
+              252,
+              253
+            ]
           );
+        }
 
-        pdfText(
+
+        /*
+         * Libellé métier
+         */
+        pdfFitText(
           doc,
-          label.length > 18
-            ? `${label.slice(
-                0,
-                17
-              )}…`
-            : label,
-          x + 3,
-          labelY,
+          r.metier,
+          x + 2,
+          rowY +
+            rowH *
+              0.64,
+          labelW - 5,
           {
-            size: 3.7,
-            color: text,
+            size:
+              rows.length > 16
+                ? 3.2
+                : 3.6,
+            color: slate,
             bold: true
           }
         );
@@ -1207,152 +2276,327 @@ function exportProfessionalPDF(
         const v1 =
           Math.max(
             0,
-            Number(
+            safePdfNumber(
               r[firstKey]
-            ) || 0
+            )
           );
 
         const v2 =
           Math.max(
             0,
-            Number(
+            safePdfNumber(
               r[secondKey]
-            ) || 0
+            )
           );
 
 
-        const barHeight =
+        /*
+         * Deux barres fines.
+         */
+        const barH =
           Math.max(
-            0.8,
-            rowH *
-              0.28
+            0.75,
+            Math.min(
+              2.3,
+              rowH *
+                0.25
+            )
           );
 
 
-        const y1 =
+        const bar1Y =
           rowY +
           rowH *
-            0.18;
+            0.12;
 
-        const y2 =
+        const bar2Y =
           rowY +
           rowH *
-            0.56;
+            0.55;
 
 
-        doc.setFillColor(
-          ...firstColor
-        );
+        /*
+         * Barre 1
+         */
+        if (
+          v1 > 0
+        ) {
+          doc.setFillColor(
+            ...firstColor
+          );
 
-        doc.rect(
-          left,
-          y1,
-          plotW *
-            (v1 /
-              maxValue),
-          barHeight,
-          "F"
-        );
+          doc.rect(
+            left,
+            bar1Y,
+            plotW *
+              (
+                v1 /
+                axisMax
+              ),
+            barH,
+            "F"
+          );
+        }
 
 
-        doc.setFillColor(
-          ...secondColor
-        );
+        /*
+         * Barre 2
+         */
+        if (
+          v2 > 0
+        ) {
+          doc.setFillColor(
+            ...secondColor
+          );
 
-        doc.rect(
-          left,
-          y2,
-          plotW *
-            (v2 /
-              maxValue),
-          barHeight,
-          "F"
-        );
+          doc.rect(
+            left,
+            bar2Y,
+            plotW *
+              (
+                v2 /
+                axisMax
+              ),
+            barH,
+            "F"
+          );
+        }
+
+
+        /*
+         * Valeurs au bout des barres.
+         */
+        if (
+          rowH >= 3
+        ) {
+
+          if (
+            v1 > 0
+          ) {
+
+            const valueX =
+              left +
+              plotW *
+                (
+                  v1 /
+                  axisMax
+                ) +
+              1.5;
+
+            pdfText(
+              doc,
+              pdfHours(v1),
+              Math.min(
+                valueX,
+                right - 1
+              ),
+              bar1Y +
+                barH -
+                0.1,
+              {
+                size:
+                  rows.length > 16
+                    ? 2.9
+                    : 3.2,
+                color:
+                  firstColor,
+                bold: true
+              }
+            );
+          }
+
+
+          if (
+            v2 > 0
+          ) {
+
+            const valueX =
+              left +
+              plotW *
+                (
+                  v2 /
+                  axisMax
+                ) +
+              1.5;
+
+            pdfText(
+              doc,
+              pdfHours(v2),
+              Math.min(
+                valueX,
+                right - 1
+              ),
+              bar2Y +
+                barH -
+                0.1,
+              {
+                size:
+                  rows.length > 16
+                    ? 2.9
+                    : 3.2,
+                color:
+                  secondColor,
+                bold: true
+              }
+            );
+          }
+        }
       }
     );
   }
 
 
-  drawBarChart(
-    M,
-    chartY,
-    chartW,
-    chartH,
-    "Budget alloué vs consommé",
-    lignes,
-    "budgetAlloue",
-    "encouru",
-    [148, 163, 184],
-    blue,
-    "Budget",
-    "Consommé"
-  );
+  /* =======================================================
+     GRAPHIQUE 1
+     ======================================================= */
+
+  const chartY =
+    chartSectionY + 4;
+
+  const chartGap = 4;
+
+  const chartW =
+    (
+      PAGE_W -
+      2 * M -
+      chartGap
+    ) / 2;
+
+  const chartH = 68;
 
 
-  drawBarChart(
-    M +
-      chartW +
-      chartGap,
-    chartY,
-    chartW,
-    chartH,
-    "Consommé vs budget à date",
-    lignes,
-    "budgetDate",
-    "encouru",
-    [167, 243, 208],
-    [8, 145, 178],
-    "Budget date",
-    "Consommé"
-  );
+  drawHorizontalBarChart({
+    x: M,
+    y: chartY,
+    width: chartW,
+    height: chartH,
+
+    title:
+      "Budget alloué vs consommé",
+
+    rows,
+
+    firstKey:
+      "budgetAlloue",
+
+    secondKey:
+      "encouru",
+
+    firstColor:
+      [148, 163, 184],
+
+    secondColor:
+      blue,
+
+    firstLabel:
+      "Budget alloué",
+
+    secondLabel:
+      "Consommé"
+  });
 
 
   /* =======================================================
-     PIED DE PAGE
+     GRAPHIQUE 2
      ======================================================= */
 
+  drawHorizontalBarChart({
+    x:
+      M +
+      chartW +
+      chartGap,
+
+    y: chartY,
+
+    width: chartW,
+
+    height: chartH,
+
+    title:
+      "Consommé vs budget à date",
+
+    rows,
+
+    firstKey:
+      "budgetDate",
+
+    secondKey:
+      "encouru",
+
+    firstColor:
+      [134, 239, 172],
+
+    secondColor:
+      cyan,
+
+    firstLabel:
+      "Budget à date",
+
+    secondLabel:
+      "Consommé"
+  });
+
+
+  /* =======================================================
+     BARRE DE SITUATION EN BAS
+     ======================================================= */
+
+  const bottomY =
+    198;
+
+
+  /*
+   * Ligne de séparation
+   */
   pdfLine(
     doc,
     M,
-    PAGE_H - 8,
+    bottomY - 5,
     PAGE_W - M,
-    PAGE_H - 8,
+    bottomY - 5,
     border,
     0.3
   );
+
 
   pdfText(
     doc,
     "PilotageH · Rapport généré automatiquement",
     M,
-    PAGE_H - 4,
+    bottomY,
     {
-      size: 5,
+      size: 4.5,
       color: muted
     }
   );
 
+
   pdfText(
     doc,
-    meta.affaire
-      ? `Analyse filtrée : ${meta.affaire}`
+    affaire
+      ? `Analyse filtrée : ${affaire}`
       : "Analyse globale",
     PAGE_W / 2,
-    PAGE_H - 4,
+    bottomY,
     {
-      size: 5,
+      size: 4.5,
       color: muted,
       align: "center"
     }
   );
 
+
   pdfText(
     doc,
-    `${lignes.length} métiers`,
+    `${rows.length} métier${
+      rows.length > 1
+        ? "s"
+        : ""
+    }`,
     PAGE_W - M,
-    PAGE_H - 4,
+    bottomY,
     {
-      size: 5,
+      size: 4.5,
       color: muted,
       align: "right"
     }
@@ -1360,22 +2604,61 @@ function exportProfessionalPDF(
 
 
   /* =======================================================
-     SAUVEGARDE
+     NOM DU FICHIER
      ======================================================= */
 
   const safeAffaire =
     String(
-      meta.affaire ||
+      affaire ||
         "global"
     )
+      .normalize(
+        "NFD"
+      )
+      .replace(
+        /[\u0300-\u036f]/g,
+        ""
+      )
       .replace(
         /[^a-zA-Z0-9-_]/g,
         "_"
       )
-      .slice(0, 50);
+      .slice(
+        0,
+        50
+      );
+
+
+  const safeMetier =
+    String(
+      metierFiltre ||
+        ""
+    )
+      .normalize(
+        "NFD"
+      )
+      .replace(
+        /[\u0300-\u036f]/g,
+        ""
+      )
+      .replace(
+        /[^a-zA-Z0-9-_]/g,
+        "_"
+      )
+      .slice(
+        0,
+        30
+      );
+
+
+  const suffix =
+    safeMetier
+      ? `_${safeMetier}`
+      : "";
+
 
   doc.save(
-    `pilotageh_rapport_${safeAffaire}.pdf`
+    `pilotageh_rapport_${safeAffaire}${suffix}.pdf`
   );
 }
 
@@ -1407,19 +2690,24 @@ function useData() {
         const data =
           await loadData();
 
+
         if (!mounted) {
           return;
         }
+
 
         syncMetiers(
           data
         );
 
+
         setRows(
           data
         );
 
-      } catch (error) {
+      } catch (
+        error
+      ) {
 
         console.error(
           "Erreur chargement des données :",
@@ -1457,6 +2745,7 @@ function useData() {
       onData
     );
 
+
     window.addEventListener(
       "pilotageh-settings",
       onSettings
@@ -1471,10 +2760,12 @@ function useData() {
 
       mounted = false;
 
+
       window.removeEventListener(
         "pilotageh-data",
         onData
       );
+
 
       window.removeEventListener(
         "pilotageh-settings",
@@ -1688,10 +2979,6 @@ function Dashboard() {
     })
   );
 
-
-  /*
-   * Synchronisation URL
-   */
 
   useEffect(() => {
 
@@ -2198,7 +3485,9 @@ function Login() {
           "/imports"
         );
 
-      } catch (err) {
+      } catch (
+        err
+      ) {
 
         console.error(
           "Erreur connexion :",
@@ -2532,21 +3821,26 @@ function Imports() {
             file
           );
 
+
         setPreview(
           result
         );
 
-      } catch (err) {
+      } catch (
+        err
+      ) {
 
         console.error(
           "Erreur lecture Excel :",
           err
         );
 
+
         setMsg(
           "Erreur de lecture : " +
           err.message
         );
+
 
         setMsgType(
           "danger"
@@ -2580,11 +3874,13 @@ function Imports() {
           "Impossible d'importer : certaines colonnes obligatoires sont manquantes."
         );
 
+
         setMsgType(
           "danger"
         );
 
         return;
+
       }
 
 
@@ -2596,11 +3892,13 @@ function Imports() {
           "Aucune ligne valide à importer."
         );
 
+
         setMsgType(
           "danger"
         );
 
         return;
+
       }
 
 
@@ -2629,17 +3927,21 @@ function Imports() {
           "success"
         );
 
-      } catch (err) {
+      } catch (
+        err
+      ) {
 
         console.error(
           "Erreur import :",
           err
         );
 
+
         setMsg(
           "Erreur lors de l'import : " +
           err.message
         );
+
 
         setMsgType(
           "danger"
@@ -2878,6 +4180,7 @@ function Imports() {
                 <thead>
 
                   <tr>
+
                     <th>
                       Affaire
                     </th>
@@ -2901,6 +4204,7 @@ function Imports() {
                     <th>
                       Date
                     </th>
+
                   </tr>
 
                 </thead>
@@ -3046,7 +4350,9 @@ function Imports() {
                     "success"
                   );
 
-                } catch (err) {
+                } catch (
+                  err
+                ) {
 
                   console.error(
                     "Erreur suppression :",
@@ -3197,7 +4503,9 @@ function Analyse() {
                 x
               ) =>
                 a +
-                x.encouru,
+                safePdfNumber(
+                  x.encouru
+                ),
               0
             );
 
@@ -3215,7 +4523,9 @@ function Analyse() {
                 x
               ) =>
                 a +
-                x.budgetDate,
+                safePdfNumber(
+                  x.budgetDate
+                ),
               0
             );
 
@@ -3516,12 +4826,6 @@ function Detail() {
 
   }
 
-
-  /*
-   * Retour complet :
-   * on restaure tous les filtres
-   * connus du Dashboard.
-   */
 
   const handleBack =
     () => {
@@ -3877,7 +5181,7 @@ function Gauge({
       0,
       Math.min(
         100,
-        value || 0
+        safePdfNumber(value)
       )
     );
 

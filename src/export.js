@@ -1,10 +1,16 @@
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
-import { fmt1 } from "./calculs";
 
-/* =========================================================
-   TELECHARGEMENT
-   ========================================================= */
+import {
+  fmt1,
+  COLORS,
+  STATUS_COLORS
+} from "./calculs";
+
+
+// =========================================================
+// OUTILS
+// =========================================================
 
 function download(blob, name) {
   const u = URL.createObjectURL(blob);
@@ -15,7 +21,8 @@ function download(blob, name) {
 
   document.body.appendChild(a);
   a.click();
-  a.remove();
+
+  document.body.removeChild(a);
 
   setTimeout(() => {
     URL.revokeObjectURL(u);
@@ -23,13 +30,170 @@ function download(blob, name) {
 }
 
 
-/* =========================================================
-   EXPORT EXCEL
-   ========================================================= */
+/*
+ * IMPORTANT POUR jsPDF
+ *
+ * Intl.NumberFormat("fr-FR") utilise des espaces
+ * insécables / espaces fines insécables.
+ *
+ * Certaines polices standards de jsPDF les interprètent
+ * mal et peuvent afficher :
+ *
+ * 16 /455
+ *
+ * au lieu de :
+ *
+ * 16 455
+ *
+ * On normalise donc tous les séparateurs.
+ */
 
-export function exportExcel(lignes, total) {
+function pdfNumber(value, decimals = 0) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    return "0";
+  }
+
+  const formatted =
+    new Intl.NumberFormat("fr-FR", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+      useGrouping: true
+    }).format(n);
+
+  return formatted
+    .replace(/\u202F/g, " ")
+    .replace(/\u00A0/g, " ");
+}
+
+
+function pdfPct(value) {
+  return `${pdfNumber(value, 1)} %`;
+}
+
+
+function pdfSigned(value, decimals = 0) {
+  const n = Number(value) || 0;
+
+  const prefix =
+    n > 0
+      ? "+"
+      : "";
+
+  return `${prefix}${pdfNumber(n, decimals)}`;
+}
+
+
+function safeText(value) {
+  return String(value ?? "")
+    .replace(/\u202F/g, " ")
+    .replace(/\u00A0/g, " ")
+    .replace(/\r?\n/g, " ");
+}
+
+
+function truncateText(doc, text, maxWidth) {
+  const value = safeText(text);
+
+  if (
+    doc.getTextWidth(value) <=
+    maxWidth
+  ) {
+    return value;
+  }
+
+  let result = value;
+
+  while (
+    result.length > 1 &&
+    doc.getTextWidth(
+      `${result}…`
+    ) > maxWidth
+  ) {
+    result = result.slice(
+      0,
+      -1
+    );
+  }
+
+  return `${result}…`;
+}
+
+
+function hexToRgb(hex) {
+  const clean =
+    String(hex || "")
+      .replace("#", "");
+
+  if (clean.length !== 6) {
+    return [100, 116, 139];
+  }
+
+  return [
+    parseInt(
+      clean.substring(0, 2),
+      16
+    ),
+    parseInt(
+      clean.substring(2, 4),
+      16
+    ),
+    parseInt(
+      clean.substring(4, 6),
+      16
+    )
+  ];
+}
+
+
+function setFillHex(doc, hex) {
+  const [r, g, b] =
+    hexToRgb(hex);
+
+  doc.setFillColor(
+    r,
+    g,
+    b
+  );
+}
+
+
+function setTextHex(doc, hex) {
+  const [r, g, b] =
+    hexToRgb(hex);
+
+  doc.setTextColor(
+    r,
+    g,
+    b
+  );
+}
+
+
+function setDrawHex(doc, hex) {
+  const [r, g, b] =
+    hexToRgb(hex);
+
+  doc.setDrawColor(
+    r,
+    g,
+    b
+  );
+}
+
+
+// =========================================================
+// EXCEL
+// =========================================================
+
+export function exportExcel(
+  lignes,
+  total
+) {
 
   const data = [
+
     [
       "Métier",
       "Heures consommées",
@@ -43,18 +207,22 @@ export function exportExcel(lignes, total) {
       "Statut"
     ],
 
-    ...lignes.map(x => [
-      x.metier,
-      x.encouru,
-      x.budgetDate,
-      x.budgetAlloue,
-      x.reste,
-      fmt1(x.consoReelle),
-      fmt1(x.consoDate),
-      x.ecartH,
-      fmt1(x.ecartPoints),
-      x.statut
-    ]),
+    ...lignes.map(
+      x => [
+
+        x.metier,
+        x.encouru,
+        x.budgetDate,
+        x.budgetAlloue,
+        x.reste,
+        fmt1(x.consoReelle),
+        fmt1(x.consoDate),
+        x.ecartH,
+        fmt1(x.ecartPoints),
+        x.statut
+
+      ]
+    ),
 
     [
       "TOTAL",
@@ -68,15 +236,46 @@ export function exportExcel(lignes, total) {
       fmt1(total.ecartPoints),
       total.statut
     ]
+
   ];
 
-  const wb = XLSX.utils.book_new();
+
+  const wb =
+    XLSX.utils.book_new();
+
+
+  const ws =
+    XLSX.utils.aoa_to_sheet(
+      data
+    );
+
+
+  /*
+   * Largeurs de colonnes
+   */
+
+  ws["!cols"] = [
+
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 13 },
+    { wch: 12 }
+
+  ];
+
 
   XLSX.utils.book_append_sheet(
     wb,
-    XLSX.utils.aoa_to_sheet(data),
+    ws,
     "Pilotage"
   );
+
 
   XLSX.writeFile(
     wb,
@@ -85,13 +284,17 @@ export function exportExcel(lignes, total) {
 }
 
 
-/* =========================================================
-   EXPORT CSV
-   ========================================================= */
+// =========================================================
+// CSV
+// =========================================================
 
-export function exportCSV(lignes, total) {
+export function exportCSV(
+  lignes,
+  total
+) {
 
   const data = [
+
     [
       "Métier",
       "Heures consommées",
@@ -105,18 +308,22 @@ export function exportCSV(lignes, total) {
       "Statut"
     ],
 
-    ...lignes.map(x => [
-      x.metier,
-      x.encouru,
-      x.budgetDate,
-      x.budgetAlloue,
-      x.reste,
-      fmt1(x.consoReelle),
-      fmt1(x.consoDate),
-      x.ecartH,
-      fmt1(x.ecartPoints),
-      x.statut
-    ]),
+    ...lignes.map(
+      x => [
+
+        x.metier,
+        x.encouru,
+        x.budgetDate,
+        x.budgetAlloue,
+        x.reste,
+        fmt1(x.consoReelle),
+        fmt1(x.consoDate),
+        x.ecartH,
+        fmt1(x.ecartPoints),
+        x.statut
+
+      ]
+    ),
 
     [
       "TOTAL",
@@ -130,25 +337,35 @@ export function exportCSV(lignes, total) {
       fmt1(total.ecartPoints),
       total.statut
     ]
+
   ];
+
 
   const csv =
     "\uFEFF" +
     data
-      .map(row =>
-        row
-          .map(c =>
-            `"${String(c ?? "").replaceAll('"', '""')}"`
-          )
-          .join(";")
+      .map(
+        row =>
+          row
+            .map(
+              c =>
+                `"${String(c)
+                  .replaceAll(
+                    '"',
+                    '""'
+                  )}"`
+            )
+            .join(";")
       )
       .join("\n");
+
 
   download(
     new Blob(
       [csv],
       {
-        type: "text/csv;charset=utf-8"
+        type:
+          "text/csv;charset=utf-8"
       }
     ),
     "pilotageh_export.csv"
@@ -156,462 +373,719 @@ export function exportCSV(lignes, total) {
 }
 
 
-/* =========================================================
-   OUTILS PDF
-   ========================================================= */
+// =========================================================
+// CARTE KPI PDF
+// =========================================================
 
-function pdfColor(doc, color) {
-  doc.setFillColor(...color);
-}
-
-function pdfTextColor(doc, color) {
-  doc.setTextColor(...color);
-}
-
-function roundedBox(
+function drawKpi(
   doc,
-  x,
-  y,
-  w,
-  h,
-  fill,
-  radius = 2
+  {
+    x,
+    y,
+    w,
+    h,
+    label,
+    value,
+    unit = "",
+    accent = "#2563eb",
+    sub = ""
+  }
 ) {
-  pdfColor(doc, fill);
+
+  /*
+   * Fond
+   */
+
+  doc.setFillColor(
+    255,
+    255,
+    255
+  );
 
   doc.roundedRect(
     x,
     y,
     w,
     h,
-    radius,
-    radius,
+    2.5,
+    2.5,
     "F"
   );
-}
 
 
-function getStatusColor(status) {
+  /*
+   * Bordure gauche
+   */
 
-  if (status === "vert") {
-    return [22, 163, 74];
-  }
+  setFillHex(
+    doc,
+    accent
+  );
 
-  if (status === "orange") {
-    return [234, 88, 12];
-  }
-
-  if (status === "rouge") {
-    return [220, 38, 38];
-  }
-
-  return [100, 116, 139];
-}
-
-
-function getStatusLabel(status) {
-
-  if (status === "vert") {
-    return "FAVORABLE";
-  }
-
-  if (status === "orange") {
-    return "VIGILANCE";
-  }
-
-  if (status === "rouge") {
-    return "CRITIQUE";
-  }
-
-  return "—";
-}
+  doc.roundedRect(
+    x,
+    y,
+    2.2,
+    h,
+    1.1,
+    1.1,
+    "F"
+  );
 
 
-function getMetierColor(metier) {
+  /*
+   * Label
+   */
 
-  const colors = {
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
 
-    "Mécanique": [37, 99, 235],
-    "Fluide": [8, 145, 178],
-    "Mesure": [124, 58, 237],
-    "Electricité": [202, 138, 4],
-    "Contrôle commande": [219, 39, 119],
-    "Activité spécifique": [15, 118, 110],
-    "Indus Nuc": [220, 38, 38],
-    "Indus Conv": [234, 88, 12],
-    "Indus Elec": [147, 51, 234],
-    "Montage Nuc": [22, 163, 74],
-    "Montage Conv": [101, 163, 13],
-    "Montage Elec": [5, 150, 105],
-    "Architecte": [71, 85, 105],
-    "Pilotage": [29, 78, 216],
-    "Transverse": [190, 18, 60],
-    "MERI": [126, 34, 206],
-    "Essais": [15, 118, 110]
+  doc.setFontSize(6.2);
 
-  };
+  setTextHex(
+    doc,
+    "#64748b"
+  );
 
-  if (colors[metier]) {
-    return colors[metier];
-  }
-
-  let hash = 0;
-
-  for (
-    let i = 0;
-    i < String(metier).length;
-    i++
-  ) {
-    hash =
-      String(metier).charCodeAt(i) +
-      ((hash << 5) - hash);
-  }
-
-  const extra = [
-    [2, 132, 199],
-    [79, 70, 229],
-    [192, 38, 211],
-    [219, 39, 119],
-    [225, 29, 72],
-    [234, 88, 12],
-    [202, 138, 4],
-    [101, 163, 13],
-    [22, 163, 74],
-    [5, 150, 105],
-    [13, 148, 136],
-    [8, 145, 178],
-    [37, 99, 235]
-  ];
-
-  return extra[
-    Math.abs(hash) % extra.length
-  ];
-}
+  doc.text(
+    safeText(label).toUpperCase(),
+    x + 6,
+    y + 7
+  );
 
 
-/* =========================================================
-   TEXTE MULTILIGNE
-   ========================================================= */
+  /*
+   * Valeur
+   */
 
-function fitText(
-  doc,
-  text,
-  maxWidth,
-  fontSize = 7
-) {
-  doc.setFontSize(fontSize);
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
 
-  const lines =
-    doc.splitTextToSize(
-      String(text ?? ""),
-      maxWidth
+  doc.setFontSize(11.5);
+
+  setTextHex(
+    doc,
+    "#0f172a"
+  );
+
+  doc.text(
+    safeText(value),
+    x + 6,
+    y + 15
+  );
+
+
+  /*
+   * Unité
+   */
+
+  if (unit) {
+
+    const valueWidth =
+      doc.getTextWidth(
+        safeText(value)
+      );
+
+    doc.setFontSize(6.5);
+
+    setTextHex(
+      doc,
+      "#64748b"
     );
 
-  return lines;
+    doc.text(
+      safeText(unit),
+      x + 7 + valueWidth,
+      y + 15
+    );
+
+  }
+
+
+  /*
+   * Sous-texte
+   */
+
+  if (sub) {
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(5.2);
+
+    setTextHex(
+      doc,
+      "#94a3b8"
+    );
+
+    doc.text(
+      safeText(sub),
+      x + 6,
+      y + h - 4
+    );
+
+  }
+
 }
 
 
-/* =========================================================
-   BARRES HORIZONTALES PDF
-   ========================================================= */
+// =========================================================
+// TITRE DE SECTION
+// =========================================================
 
-function drawHorizontalBars(
+function sectionTitle(
   doc,
-  {
+  title,
+  subtitle,
+  x,
+  y,
+  width
+) {
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  doc.setFontSize(8.2);
+
+  setTextHex(
+    doc,
+    "#0f172a"
+  );
+
+  doc.text(
+    safeText(title),
+    x,
+    y
+  );
+
+
+  if (subtitle) {
+
+    doc.setFont(
+      "helvetica",
+      "normal"
+    );
+
+    doc.setFontSize(5.8);
+
+    setTextHex(
+      doc,
+      "#64748b"
+    );
+
+    doc.text(
+      safeText(subtitle),
+      x + width,
+      y,
+      {
+        align: "right"
+      }
+    );
+
+  }
+
+}
+
+
+// =========================================================
+// TABLEAU
+// =========================================================
+
+function drawTable(
+  doc,
+  lignes,
+  total,
+  x,
+  y,
+  width
+) {
+
+  const rows = [
+    ...lignes,
+    total
+  ];
+
+
+  /*
+   * Largeurs optimisées
+   */
+
+  const cols = [
+    34, // métier
+    17, // consommé
+    17, // budget date
+    17, // budget alloué
+    16, // reste
+    17, // conso
+    16, // écart h
+    16, // écart pts
+    18  // statut
+  ];
+
+
+  const scale =
+    width /
+    cols.reduce(
+      (a, b) => a + b,
+      0
+    );
+
+
+  const widths =
+    cols.map(
+      c => c * scale
+    );
+
+
+  const headerHeight = 7;
+  const rowHeight = 4.35;
+
+
+  /*
+   * En-tête
+   */
+
+  setFillHex(
+    doc,
+    "#e8eef7"
+  );
+
+  doc.roundedRect(
     x,
     y,
     width,
-    height,
-    data,
-    value1,
-    value2 = null,
-    label1,
-    label2 = null,
-    maxValue = null,
-    title,
-    percent = false
-  }
-) {
-
-  const count = data.length;
-
-  if (!count) {
-    return;
-  }
-
-  const rowHeight =
-    height / count;
-
-  const labelWidth =
-    Math.min(
-      38,
-      width * 0.20
-    );
-
-  const chartX =
-    x + labelWidth;
-
-  const chartWidth =
-    width - labelWidth - 4;
-
-  const calculatedMax =
-    maxValue ??
-    Math.max(
-      1,
-      ...data.flatMap(r => [
-        Number(r[value1]) || 0,
-        value2
-          ? Number(r[value2]) || 0
-          : 0
-      ])
-    );
-
-  /* Titre */
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  pdfTextColor(doc, [30, 41, 59]);
-
-  doc.text(
-    title,
-    x,
-    y - 4
+    headerHeight,
+    1.5,
+    1.5,
+    "F"
   );
 
-  /* Lignes */
 
-  data.forEach(
+  const headers = [
+    "Métier",
+    "Cons.",
+    "B. date",
+    "B. alloué",
+    "Reste",
+    "Conso.",
+    "Écart h",
+    "Écart pts",
+    "Statut"
+  ];
+
+
+  let cursorX = x;
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  doc.setFontSize(5.2);
+
+  setTextHex(
+    doc,
+    "#475569"
+  );
+
+
+  headers.forEach(
+    (header, i) => {
+
+      doc.text(
+        header,
+        cursorX + 2,
+        y + 4.5
+      );
+
+      cursorX +=
+        widths[i];
+
+    }
+  );
+
+
+  /*
+   * Lignes
+   */
+
+  rows.forEach(
     (r, index) => {
 
       const rowY =
         y +
+        headerHeight +
         index *
-        rowHeight;
+          rowHeight;
 
-      const labelY =
-        rowY +
-        rowHeight * 0.62;
-
-      doc.setFontSize(
-        Math.min(
-          6.5,
-          Math.max(
-            4.5,
-            80 / Math.max(1, count)
-          )
-        )
-      );
-
-      doc.setFont("helvetica", "normal");
-
-      pdfTextColor(
-        doc,
-        [51, 65, 85]
-      );
-
-      let label =
-        String(
-          r.metier ?? ""
-        );
 
       /*
-       * Sur beaucoup de métiers,
-       * on réduit légèrement la taille
-       * plutôt que de couper le nom.
+       * Alternance de fond
        */
 
-      if (label.length > 20) {
-        doc.setFontSize(4.5);
+      if (
+        index % 2 === 0
+      ) {
+
+        setFillHex(
+          doc,
+          "#f8fafc"
+        );
+
+        doc.rect(
+          x,
+          rowY,
+          width,
+          rowHeight,
+          "F"
+        );
+
       }
 
-      doc.text(
-        label,
-        x,
-        labelY,
-        {
-          maxWidth:
-            labelWidth - 2
+
+      /*
+       * Ligne TOTAL
+       */
+
+      if (
+        r.metier === "TOTAL"
+      ) {
+
+        setFillHex(
+          doc,
+          "#dfe7f2"
+        );
+
+        doc.rect(
+          x,
+          rowY,
+          width,
+          rowHeight,
+          "F"
+        );
+
+      }
+
+
+      const values = [
+
+        r.metier,
+
+        pdfNumber(
+          r.encouru
+        ),
+
+        pdfNumber(
+          r.budgetDate
+        ),
+
+        pdfNumber(
+          r.budgetAlloue
+        ),
+
+        pdfNumber(
+          r.reste
+        ),
+
+        pdfPct(
+          r.consoReelle
+        ),
+
+        pdfSigned(
+          r.ecartH
+        ),
+
+        pdfSigned(
+          r.ecartPoints
+        ),
+
+        r.statut
+
+      ];
+
+
+      cursorX = x;
+
+
+      values.forEach(
+        (value, i) => {
+
+          /*
+           * Métier
+           */
+
+          if (i === 0) {
+
+            doc.setFont(
+              "helvetica",
+              r.metier === "TOTAL"
+                ? "bold"
+                : "normal"
+            );
+
+            doc.setFontSize(4.7);
+
+            setTextHex(
+              doc,
+              "#1e293b"
+            );
+
+            const text =
+              truncateText(
+                doc,
+                value,
+                widths[i] - 4
+              );
+
+            doc.text(
+              text,
+              cursorX + 2,
+              rowY + 3
+            );
+
+          }
+
+
+          /*
+           * Statut
+           */
+
+          else if (
+            i === 8
+          ) {
+
+            const status =
+              safeText(
+                value
+              );
+
+            const color =
+              STATUS_COLORS[
+                status
+              ] ||
+              "#64748b";
+
+
+            /*
+             * Pastille
+             */
+
+            setFillHex(
+              doc,
+              color
+            );
+
+            doc.roundedRect(
+              cursorX + 2,
+              rowY + 1,
+              2.2,
+              2.2,
+              1,
+              1,
+              "F"
+            );
+
+
+            doc.setFont(
+              "helvetica",
+              "bold"
+            );
+
+            doc.setFontSize(4.3);
+
+            setTextHex(
+              doc,
+              color
+            );
+
+            doc.text(
+              status === "vert"
+                ? "Favorable"
+                : status === "orange"
+                  ? "Vigilance"
+                  : "Critique",
+              cursorX + 5.5,
+              rowY + 3
+            );
+
+          }
+
+
+          /*
+           * Valeurs numériques
+           */
+
+          else {
+
+            doc.setFont(
+              "helvetica",
+              r.metier === "TOTAL"
+                ? "bold"
+                : "normal"
+            );
+
+            doc.setFontSize(4.5);
+
+            setTextHex(
+              doc,
+              "#334155"
+            );
+
+            doc.text(
+              safeText(value),
+              cursorX +
+                widths[i] -
+                2,
+              rowY + 3,
+              {
+                align: "right"
+              }
+            );
+
+          }
+
+
+          cursorX +=
+            widths[i];
+
         }
       );
 
-      /* Fond de ligne */
-
-      pdfColor(
-        doc,
-        [241, 245, 249]
-      );
-
-      doc.roundedRect(
-        chartX,
-        rowY +
-          rowHeight * 0.25,
-        chartWidth,
-        Math.max(
-          1.5,
-          rowHeight * 0.42
-        ),
-        1,
-        1,
-        "F"
-      );
-
-      /* Première barre */
-
-      const v1 =
-        Math.max(
-          0,
-          Number(r[value1]) || 0
-        );
-
-      const bar1 =
-        Math.min(
-          chartWidth,
-          chartWidth *
-            (v1 /
-              calculatedMax)
-        );
-
-      if (bar1 > 0) {
-
-        pdfColor(
-          doc,
-          percent
-            ? [37, 99, 235]
-            : [148, 163, 184]
-        );
-
-        doc.roundedRect(
-          chartX,
-          rowY +
-            rowHeight * 0.25,
-          bar1,
-          Math.max(
-            1.5,
-            rowHeight * 0.42
-          ),
-          1,
-          1,
-          "F"
-        );
-      }
-
-      /*
-       * Deuxième barre :
-       * elle est dessinée sous la première
-       * pour garder une lecture claire.
-       */
-
-      if (value2) {
-
-        const v2 =
-          Math.max(
-            0,
-            Number(r[value2]) || 0
-          );
-
-        const bar2 =
-          Math.min(
-            chartWidth,
-            chartWidth *
-              (v2 /
-                calculatedMax)
-          );
-
-        const secondY =
-          rowY +
-          rowHeight * 0.69;
-
-        pdfColor(
-          doc,
-          percent
-            ? [203, 213, 225]
-            : [37, 99, 235]
-        );
-
-        doc.roundedRect(
-          chartX,
-          secondY,
-          bar2,
-          Math.max(
-            1.2,
-            rowHeight * 0.18
-          ),
-          0.8,
-          0.8,
-          "F"
-        );
-
-        /*
-         * Valeurs numériques
-         */
-
-        doc.setFontSize(4.2);
-
-        pdfTextColor(
-          doc,
-          [71, 85, 105]
-        );
-
-        const display1 =
-          percent
-            ? `${fmt1(v1)} %`
-            : `${fmt1(v1)} h`;
-
-        const display2 =
-          percent
-            ? `${fmt1(v2)} %`
-            : `${fmt1(v2)} h`;
-
-        doc.text(
-          display1,
-          chartX +
-            Math.min(
-              chartWidth - 1,
-              bar1 + 1
-            ),
-          rowY +
-            rowHeight * 0.49
-        );
-
-        doc.text(
-          display2,
-          chartX +
-            Math.min(
-              chartWidth - 1,
-              bar2 + 1
-            ),
-          secondY +
-            rowHeight * 0.16
-        );
-      }
-
-      else {
-
-        doc.setFontSize(4.2);
-
-        pdfTextColor(
-          doc,
-          [71, 85, 105]
-        );
-
-        const display =
-          percent
-            ? `${fmt1(v1)} %`
-            : `${fmt1(v1)} h`;
-
-        doc.text(
-          display,
-          chartX +
-            Math.min(
-              chartWidth - 1,
-              bar1 + 1
-            ),
-          rowY +
-            rowHeight * 0.48
-        );
-      }
-
     }
+  );
+
+
+  /*
+   * Bordure générale
+   */
+
+  setDrawHex(
+    doc,
+    "#dbe3ee"
+  );
+
+  doc.setLineWidth(
+    0.25
+  );
+
+  doc.roundedRect(
+    x,
+    y,
+    width,
+    headerHeight +
+      rows.length *
+        rowHeight,
+    1.5,
+    1.5,
+    "S"
+  );
+
+
+  return (
+    headerHeight +
+    rows.length *
+      rowHeight
+  );
+
+}
+
+
+// =========================================================
+// HISTOGRAMME HORIZONTAL
+// =========================================================
+
+function drawHorizontalChart(
+  doc,
+  {
+    title,
+    subtitle,
+    data,
+    x,
+    y,
+    width,
+    height,
+    valueA,
+    valueB,
+    labelA,
+    labelB,
+    colorA,
+    colorB
+  }
+) {
+
+  /*
+   * Carte
+   */
+
+  doc.setFillColor(
+    255,
+    255,
+    255
+  );
+
+  doc.roundedRect(
+    x,
+    y,
+    width,
+    height,
+    2.5,
+    2.5,
+    "F"
+  );
+
+
+  /*
+   * Titre
+   */
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  doc.setFontSize(6.8);
+
+  setTextHex(
+    doc,
+    "#0f172a"
+  );
+
+  doc.text(
+    safeText(title),
+    x + 5,
+    y + 7
+  );
+
+
+  /*
+   * Sous-titre
+   */
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
+  doc.setFontSize(4.8);
+
+  setTextHex(
+    doc,
+    "#64748b"
+  );
+
+  doc.text(
+    safeText(subtitle),
+    x + 5,
+    y + 11
   );
 
 
@@ -620,72 +1094,792 @@ function drawHorizontalBars(
    */
 
   const legendY =
-    y +
-    height +
-    3;
+    y + 7;
 
-  doc.setFontSize(5);
 
-  pdfColor(
+  const legendX =
+    x + width - 58;
+
+
+  setFillHex(
     doc,
-    percent
-      ? [37, 99, 235]
-      : [148, 163, 184]
+    colorA
   );
 
   doc.rect(
-    x,
-    legendY - 2.2,
+    legendX,
+    legendY - 3,
     3,
     2,
     "F"
   );
 
-  pdfTextColor(
+
+  doc.setFontSize(4.3);
+
+  setTextHex(
     doc,
-    [71, 85, 105]
+    "#64748b"
   );
 
   doc.text(
-    label1,
-    x + 4,
-    legendY
+    safeText(labelA),
+    legendX + 5,
+    legendY - 1.2
   );
 
-  if (label2) {
 
-    pdfColor(
+  const secondLegendX =
+    legendX + 27;
+
+
+  setFillHex(
+    doc,
+    colorB
+  );
+
+  doc.rect(
+    secondLegendX,
+    legendY - 3,
+    3,
+    2,
+    "F"
+  );
+
+
+  doc.text(
+    safeText(labelB),
+    secondLegendX + 5,
+    legendY - 1.2
+  );
+
+
+  /*
+   * Zone graphique
+   */
+
+  const chartX =
+    x + 43;
+
+  const chartY =
+    y + 15;
+
+  const chartWidth =
+    width - 48;
+
+  const chartHeight =
+    height - 19;
+
+
+  /*
+   * Tous les métiers
+   */
+
+  const rows =
+    data || [];
+
+
+  if (!rows.length) {
+
+    doc.setFontSize(5);
+
+    setTextHex(
       doc,
-      percent
-        ? [203, 213, 225]
-        : [37, 99, 235]
-    );
-
-    doc.rect(
-      x + 38,
-      legendY - 2.2,
-      3,
-      2,
-      "F"
-    );
-
-    pdfTextColor(
-      doc,
-      [71, 85, 105]
+      "#94a3b8"
     );
 
     doc.text(
-      label2,
-      x + 42,
-      legendY
+      "Aucune donnée",
+      x + 5,
+      y + height / 2
     );
+
+    return;
+
   }
+
+
+  /*
+   * Valeurs
+   */
+
+  const allValues =
+    rows.flatMap(
+      r => [
+        Number(
+          r[valueA]
+        ) || 0,
+        Number(
+          r[valueB]
+        ) || 0
+      ]
+    );
+
+
+  const max =
+    Math.max(
+      1,
+      ...allValues.map(
+        Math.abs
+      )
+    );
+
+
+  /*
+   * Grille verticale
+   */
+
+  const gridValues =
+    [0, 0.25, 0.5, 0.75, 1];
+
+
+  gridValues.forEach(
+    ratio => {
+
+      const gx =
+        chartX +
+        ratio *
+          chartWidth;
+
+
+      setDrawHex(
+        doc,
+        "#e2e8f0"
+      );
+
+      doc.setLineWidth(
+        0.18
+      );
+
+      doc.line(
+        gx,
+        chartY,
+        gx,
+        chartY +
+          chartHeight
+      );
+
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.setFontSize(3.9);
+
+      setTextHex(
+        doc,
+        "#94a3b8"
+      );
+
+
+      doc.text(
+        pdfNumber(
+          max *
+            ratio
+        ),
+        gx,
+        chartY - 1.5,
+        {
+          align: "center"
+        }
+      );
+
+    }
+  );
+
+
+  /*
+   * Hauteur d'une ligne
+   *
+   * 17 métiers doivent être visibles.
+   */
+
+  const rowSpace =
+    chartHeight /
+    rows.length;
+
+
+  const barHeight =
+    Math.max(
+      0.9,
+      Math.min(
+        1.7,
+        rowSpace * 0.27
+      )
+    );
+
+
+  rows.forEach(
+    (r, index) => {
+
+      const centerY =
+        chartY +
+        index *
+          rowSpace +
+        rowSpace / 2;
+
+
+      /*
+       * Nom du métier
+       */
+
+      doc.setFont(
+        "helvetica",
+        "normal"
+      );
+
+      doc.setFontSize(4.1);
+
+      setTextHex(
+        doc,
+        "#334155"
+      );
+
+
+      const label =
+        truncateText(
+          doc,
+          r.metier,
+          39
+        );
+
+
+      doc.text(
+        label,
+        x + 4,
+        centerY + 1.2
+      );
+
+
+      /*
+       * Barres
+       */
+
+      const a =
+        Number(
+          r[valueA]
+        ) || 0;
+
+      const b =
+        Number(
+          r[valueB]
+        ) || 0;
+
+
+      const widthA =
+        Math.max(
+          0,
+          Math.abs(a) /
+            max *
+            chartWidth
+        );
+
+
+      const widthB =
+        Math.max(
+          0,
+          Math.abs(b) /
+            max *
+            chartWidth
+        );
+
+
+      /*
+       * Barre A
+       */
+
+      setFillHex(
+        doc,
+        colorA
+      );
+
+      doc.roundedRect(
+        chartX,
+        centerY -
+          barHeight -
+          0.3,
+        widthA,
+        barHeight,
+        0.4,
+        0.4,
+        "F"
+      );
+
+
+      /*
+       * Barre B
+       */
+
+      setFillHex(
+        doc,
+        colorB
+      );
+
+      doc.roundedRect(
+        chartX,
+        centerY +
+          0.3,
+        widthB,
+        barHeight,
+        0.4,
+        0.4,
+        "F"
+      );
+
+    }
+  );
+
+
+  /*
+   * Bordure
+   */
+
+  setDrawHex(
+    doc,
+    "#e2e8f0"
+  );
+
+  doc.setLineWidth(
+    0.25
+  );
+
+  doc.roundedRect(
+    x,
+    y,
+    width,
+    height,
+    2.5,
+    2.5,
+    "S"
+  );
+
 }
 
 
-/* =========================================================
-   EXPORT PDF — RAPPORT PROFESSIONNEL
-   ========================================================= */
+// =========================================================
+// BLOC ANALYSE
+// =========================================================
+
+function drawAnalysis(
+  doc,
+  {
+    x,
+    y,
+    width,
+    height,
+    total,
+    affaire,
+    date
+  }
+) {
+
+  /*
+   * Carte
+   */
+
+  doc.setFillColor(
+    255,
+    255,
+    255
+  );
+
+  doc.roundedRect(
+    x,
+    y,
+    width,
+    height,
+    2.5,
+    2.5,
+    "F"
+  );
+
+
+  /*
+   * Bandeau titre
+   */
+
+  setFillHex(
+    doc,
+    "#2563eb"
+  );
+
+  doc.roundedRect(
+    x,
+    y,
+    3,
+    height,
+    1.5,
+    1.5,
+    "F"
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  doc.setFontSize(8);
+
+  setTextHex(
+    doc,
+    "#0f172a"
+  );
+
+  doc.text(
+    "ANALYSE DE LA SITUATION",
+    x + 8,
+    y + 9
+  );
+
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
+  doc.setFontSize(5.2);
+
+  setTextHex(
+    doc,
+    "#64748b"
+  );
+
+  doc.text(
+    affaire
+      ? `Analyse filtrée : ${safeText(
+          affaire
+        )}`
+      : "Analyse globale",
+    x + 8,
+    y + 15
+  );
+
+
+  doc.text(
+    `Date d'analyse : ${safeText(
+      date || "—"
+    )}`,
+    x + 8,
+    y + 20
+  );
+
+
+  /*
+   * Message principal
+   */
+
+  const ecartH =
+    Number(
+      total.ecartH
+    ) || 0;
+
+
+  const positive =
+    ecartH > 0;
+
+
+  doc.setFont(
+    "helvetica",
+    "bold"
+  );
+
+  doc.setFontSize(6.3);
+
+  setTextHex(
+    doc,
+    positive
+      ? "#dc2626"
+      : "#16a34a"
+  );
+
+
+  const message =
+    positive
+      ? `La consommation cumulée dépasse le budget à date de ${pdfNumber(
+          Math.abs(ecartH)
+        )} h.`
+      : `La consommation cumulée est inférieure au budget à date de ${pdfNumber(
+          Math.abs(ecartH)
+        )} h.`;
+
+
+  doc.text(
+    safeText(message),
+    x + 8,
+    y + 30
+  );
+
+
+  /*
+   * Séparateur
+   */
+
+  setDrawHex(
+    doc,
+    "#e2e8f0"
+  );
+
+  doc.setLineWidth(
+    0.3
+  );
+
+  doc.line(
+    x + 8,
+    y + 34,
+    x + width - 8,
+    y + 34
+  );
+
+
+  /*
+   * 3 indicateurs
+   */
+
+  const colW =
+    (width - 28) / 3;
+
+
+  const indicators = [
+
+    {
+      label:
+        "CONSOMMATION RÉELLE",
+      value:
+        pdfPct(
+          total.consoReelle
+        ),
+      color:
+        "#2563eb"
+    },
+
+    {
+      label:
+        "CONSOMMATION À DATE",
+      value:
+        pdfPct(
+          total.consoDate
+        ),
+      color:
+        "#0891b2"
+    },
+
+    {
+      label:
+        "ÉCART THÉORIQUE",
+      value:
+        pdfSigned(
+          total.ecartPoints
+        ) + " pts",
+      color:
+        positive
+          ? "#dc2626"
+          : "#16a34a"
+    }
+
+  ];
+
+
+  indicators.forEach(
+    (item, i) => {
+
+      const ix =
+        x +
+        8 +
+        i *
+          (colW + 6);
+
+
+      doc.setFont(
+        "helvetica",
+        "bold"
+      );
+
+      doc.setFontSize(4.4);
+
+      setTextHex(
+        doc,
+        "#64748b"
+      );
+
+      doc.text(
+        item.label,
+        ix,
+        y + 42
+      );
+
+
+      doc.setFontSize(
+        10
+      );
+
+      setTextHex(
+        doc,
+        item.color
+      );
+
+      doc.text(
+        item.value,
+        ix,
+        y + 51
+      );
+
+    }
+  );
+
+
+  /*
+   * Barre de situation
+   */
+
+  const barX =
+    x + 8;
+
+  const barY =
+    y + 60;
+
+  const barW =
+    width - 16;
+
+  const barH =
+    5;
+
+
+  /*
+   * Fond
+   */
+
+  setFillHex(
+    doc,
+    "#e2e8f0"
+  );
+
+  doc.roundedRect(
+    barX,
+    barY,
+    barW,
+    barH,
+    2.5,
+    2.5,
+    "F"
+  );
+
+
+  /*
+   * Remplissage basé sur consommation
+   */
+
+  const ratio =
+    Math.max(
+      0,
+      Math.min(
+        1,
+        Number(
+          total.consoReelle
+        ) / 100
+      )
+    );
+
+
+  setFillHex(
+    doc,
+    positive
+      ? "#dc2626"
+      : "#16a34a"
+  );
+
+
+  doc.roundedRect(
+    barX,
+    barY,
+    barW * ratio,
+    barH,
+    2.5,
+    2.5,
+    "F"
+  );
+
+
+  /*
+   * Informations finales
+   */
+
+  doc.setFont(
+    "helvetica",
+    "normal"
+  );
+
+  doc.setFontSize(4.7);
+
+  setTextHex(
+    doc,
+    "#64748b"
+  );
+
+
+  doc.text(
+    `${pdfNumber(
+      total.encouru
+    )} h consommées`,
+    x + 8,
+    y + 73
+  );
+
+
+  doc.text(
+    `Budget à date : ${pdfNumber(
+      total.budgetDate
+    )} h`,
+    x + width / 2,
+    y + 73,
+    {
+      align: "center"
+    }
+  );
+
+
+  doc.text(
+    `Budget alloué : ${pdfNumber(
+      total.budgetAlloue
+    )} h`,
+    x + width - 8,
+    y + 73,
+    {
+      align: "right"
+    }
+  );
+
+
+  /*
+   * Bordure
+   */
+
+  setDrawHex(
+    doc,
+    "#e2e8f0"
+  );
+
+  doc.setLineWidth(
+    0.25
+  );
+
+  doc.roundedRect(
+    x,
+    y,
+    width,
+    height,
+    2.5,
+    2.5,
+    "S"
+  );
+
+}
+
+
+// =========================================================
+// EXPORT PDF — RAPPORT PROFESSIONNEL
+// =========================================================
 
 export function exportPDF(
   lignes,
@@ -693,37 +1887,56 @@ export function exportPDF(
   meta = {}
 ) {
 
-  const doc =
-    new jsPDF({
-      orientation: "landscape",
-      unit: "mm",
-      format: "a4",
-      compress: true
-    });
-
   /*
    * A4 paysage
    *
    * 297 × 210 mm
    */
 
-  const pageWidth = 297;
-  const pageHeight = 210;
+  const doc =
+    new jsPDF({
+      orientation:
+        "landscape",
+      unit: "mm",
+      format: "a4",
+      compress: true
+    });
 
-  const margin = 8;
 
-  const contentWidth =
-    pageWidth -
-    margin * 2;
+  /*
+   * IMPORTANT :
+   * aucune page supplémentaire.
+   */
+
+  const pageWidth =
+    doc.internal.pageSize.getWidth();
+
+  const pageHeight =
+    doc.internal.pageSize.getHeight();
 
 
-  /* =======================================================
-     FOND
-     ======================================================= */
+  /*
+   * Reset sécurité typographique
+   */
 
-  pdfColor(
-    doc,
-    [248, 250, 252]
+  if (
+    typeof doc.setCharSpace ===
+    "function"
+  ) {
+    doc.setCharSpace(0);
+  }
+
+
+  /*
+   * =======================================================
+   * FOND GLOBAL
+   * =======================================================
+   */
+
+  doc.setFillColor(
+    246,
+    248,
+    252
   );
 
   doc.rect(
@@ -735,40 +1948,47 @@ export function exportPDF(
   );
 
 
-  /* =======================================================
-     EN-TÊTE
-     ======================================================= */
+  /*
+   * =======================================================
+   * HEADER
+   * =======================================================
+   */
 
-  pdfColor(
+  setFillHex(
     doc,
-    [15, 23, 42]
+    "#2563eb"
   );
 
   doc.rect(
     0,
     0,
     pageWidth,
-    25,
+    22,
     "F"
   );
 
+
+  /*
+   * Titre
+   */
 
   doc.setFont(
     "helvetica",
     "bold"
   );
 
-  doc.setFontSize(17);
+  doc.setFontSize(15);
 
-  pdfTextColor(
-    doc,
-    [255, 255, 255]
+  doc.setTextColor(
+    255,
+    255,
+    255
   );
 
   doc.text(
-    "PILOTAGEH",
-    margin,
-    10
+    "PILOTAGE H",
+    9,
+    9
   );
 
 
@@ -777,228 +1997,37 @@ export function exportPDF(
     "normal"
   );
 
-  doc.setFontSize(8);
+  doc.setFontSize(6.5);
 
-  doc.text(
-    "Rapport de pilotage des heures",
-    margin,
-    17
+  doc.setTextColor(
+    225,
+    235,
+    255
   );
 
-
-  /* Date / affaire */
-
-  doc.setFontSize(7);
-
-  const affaireText =
-    meta.affaire
-      ? `Affaire : ${meta.affaire}`
-      : meta.affaires
-        ? `Affaires : ${meta.affaires}`
-        : "Toutes les affaires";
-
   doc.text(
-    affaireText,
-    pageWidth -
-      margin,
+    "RAPPORT DE PILOTAGE DES HEURES",
     9,
-    {
-      align: "right"
-    }
+    15
   );
 
 
-  doc.text(
-    `Date d'analyse : ${
-      meta.date || "—"
-    }`,
-    pageWidth -
-      margin,
-    16,
-    {
-      align: "right"
-    }
-  );
+  /*
+   * Informations à droite
+   */
+
+  const date =
+    meta.date ||
+    new Date()
+      .toISOString()
+      .slice(0, 10);
 
 
-  /* =======================================================
-     KPI
-     ======================================================= */
+  const affaire =
+    meta.affaire ||
+    meta.affaires ||
+    "Toutes";
 
-  const kpiY = 30;
-
-  const kpiGap = 3;
-
-  const kpiWidth =
-    (contentWidth -
-      kpiGap * 4) /
-    5;
-
-  const kpiHeight = 20;
-
-
-  const kpis = [
-
-    {
-      label: "Budget alloué",
-      value:
-        `${fmt1(total.budgetAlloue)} h`,
-      color:
-        [71, 85, 105]
-    },
-
-    {
-      label: "Heures consommées",
-      value:
-        `${fmt1(total.encouru)} h`,
-      color:
-        [37, 99, 235]
-    },
-
-    {
-      label: "Budget à date",
-      value:
-        `${fmt1(total.budgetDate)} h`,
-      color:
-        [22, 163, 74]
-    },
-
-    {
-      label: "Consommation",
-      value:
-        `${fmt1(total.consoReelle)} %`,
-      color:
-        [234, 88, 12]
-    },
-
-    {
-      label: "Écart au théorique",
-      value:
-        `${total.ecartPoints > 0 ? "+" : ""}${fmt1(total.ecartPoints)} pts`,
-      color:
-        getStatusColor(
-          total.statut
-        )
-    }
-
-  ];
-
-
-  kpis.forEach(
-    (kpi, index) => {
-
-      const x =
-        margin +
-        index *
-        (kpiWidth +
-          kpiGap);
-
-      roundedBox(
-        doc,
-        x,
-        kpiY,
-        kpiWidth,
-        kpiHeight,
-        [255, 255, 255],
-        2
-      );
-
-      /*
-       * Bande colorée
-       */
-
-      pdfColor(
-        doc,
-        kpi.color
-      );
-
-      doc.roundedRect(
-        x,
-        kpiY,
-        2,
-        kpiHeight,
-        1,
-        1,
-        "F"
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
-      doc.setFontSize(5.5);
-
-      pdfTextColor(
-        doc,
-        [100, 116, 139]
-      );
-
-      doc.text(
-        kpi.label,
-        x + 5,
-        kpiY + 6
-      );
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.setFontSize(11);
-
-      pdfTextColor(
-        doc,
-        [15, 23, 42]
-      );
-
-      doc.text(
-        kpi.value,
-        x + 5,
-        kpiY + 15
-      );
-    }
-  );
-
-
-  /* =======================================================
-     STATUT GLOBAL
-     ======================================================= */
-
-  const statusY =
-    kpiY +
-    kpiHeight +
-    3;
-
-  const statusColor =
-    getStatusColor(
-      total.statut
-    );
-
-  roundedBox(
-    doc,
-    margin,
-    statusY,
-    contentWidth,
-    8,
-    [255, 255, 255],
-    2
-  );
-
-  pdfColor(
-    doc,
-    statusColor
-  );
-
-  doc.roundedRect(
-    margin,
-    statusY,
-    3,
-    8,
-    1,
-    1,
-    "F"
-  );
 
   doc.setFont(
     "helvetica",
@@ -1007,381 +2036,179 @@ export function exportPDF(
 
   doc.setFontSize(6.5);
 
-  pdfTextColor(
-    doc,
-    [15, 23, 42]
+  doc.setTextColor(
+    255,
+    255,
+    255
   );
 
+
   doc.text(
-    `STATUT GLOBAL : ${getStatusLabel(total.statut)}`,
-    margin + 6,
-    statusY + 5
+    safeText(date),
+    pageWidth - 9,
+    8,
+    {
+      align: "right"
+    }
   );
+
 
   doc.setFont(
     "helvetica",
     "normal"
   );
 
-  pdfTextColor(
-    doc,
-    [71, 85, 105]
+  doc.setFontSize(5.8);
+
+  doc.setTextColor(
+    225,
+    235,
+    255
   );
+
 
   doc.text(
-    `Écart consommé / budget à date : ${
-      total.ecartH > 0 ? "+" : ""
-    }${fmt1(total.ecartH)} h`,
-    80,
-    statusY + 5
-  );
-
-  doc.text(
-    `Reste à consommer : ${fmt1(total.reste)} h`,
-    190,
-    statusY + 5
-  );
-
-
-  /* =======================================================
-     TABLEAU + GRAPHIQUES
-     ======================================================= */
-
-  const sectionY =
-    statusY +
-    12;
-
-
-  /* -------------------------------------------------------
-     TABLEAU
-     ------------------------------------------------------- */
-
-  const tableX =
-    margin;
-
-  const tableWidth =
-    106;
-
-  const tableY =
-    sectionY;
-
-  const tableHeight =
-    106;
-
-
-  roundedBox(
-    doc,
-    tableX,
-    tableY,
-    tableWidth,
-    tableHeight,
-    [255, 255, 255],
-    2
-  );
-
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(8);
-
-  pdfTextColor(
-    doc,
-    [15, 23, 42]
-  );
-
-  doc.text(
-    "Synthèse par métier",
-    tableX + 5,
-    tableY + 7
-  );
-
-
-  /*
-   * Colonnes
-   */
-
-  const columns = [
+    `Affaire : ${safeText(
+      affaire
+    )}`,
+    pageWidth - 9,
+    15,
     {
-      label: "Métier",
-      width: 29
-    },
-    {
-      label: "Cons.",
-      width: 13
-    },
-    {
-      label: "Bud. date",
-      width: 14
-    },
-    {
-      label: "Bud. all.",
-      width: 14
-    },
-    {
-      label: "Écart",
-      width: 12
-    },
-    {
-      label: "Conso",
-      width: 12
-    },
-    {
-      label: "Statut",
-      width: 12
-    }
-  ];
-
-
-  let cx =
-    tableX + 4;
-
-  const headerY =
-    tableY + 14;
-
-
-  pdfColor(
-    doc,
-    [241, 245, 249]
-  );
-
-  doc.rect(
-    tableX + 3,
-    headerY - 4,
-    tableWidth - 6,
-    7,
-    "F"
-  );
-
-
-  doc.setFontSize(4.5);
-
-  columns.forEach(
-    col => {
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      pdfTextColor(
-        doc,
-        [71, 85, 105]
-      );
-
-      doc.text(
-        col.label,
-        cx,
-        headerY
-      );
-
-      cx += col.width;
+      align: "right"
     }
   );
 
 
   /*
-   * Lignes du tableau
-   *
-   * Tous les métiers sont affichés.
+   * =======================================================
+   * KPI
+   * =======================================================
    */
 
-  const tableRows = [
-    ...lignes,
-    total
-  ];
+  const marginX = 8;
 
-  const availableTableHeight =
-    tableHeight - 20;
+  const kpiGap = 3;
 
-  const rowHeight =
-    availableTableHeight /
-    Math.max(
-      1,
-      tableRows.length
-    );
+  const kpiY = 26;
 
+  const kpiH = 23;
 
-  tableRows.forEach(
-    (r, index) => {
-
-      const ry =
-        headerY +
-        5 +
-        index *
-        rowHeight;
-
-      /*
-       * Ligne TOTAL
-       */
-
-      if (
-        r.metier === "TOTAL"
-      ) {
-
-        pdfColor(
-          doc,
-          [226, 232, 240]
-        );
-
-        doc.rect(
-          tableX + 3,
-          ry - 3,
-          tableWidth - 6,
-          rowHeight,
-          "F"
-        );
-      }
+  const kpiW =
+    (
+      pageWidth -
+      marginX * 2 -
+      kpiGap * 5
+    ) / 6;
 
 
-      cx =
-        tableX + 4;
+  const kpis = [
 
-      doc.setFont(
-        "helvetica",
-        r.metier === "TOTAL"
-          ? "bold"
-          : "normal"
-      );
-
-      doc.setFontSize(
-        r.metier === "TOTAL"
-          ? 4.5
-          : 4.2
-      );
-
-      pdfTextColor(
-        doc,
-        [30, 41, 59]
-      );
-
-
-      /*
-       * Métier
-       */
-
-      let metierLabel =
-        String(
-          r.metier
-        );
-
-      if (
-        metierLabel.length > 18
-      ) {
-        metierLabel =
-          metierLabel.slice(
-            0,
-            17
-          ) + "…";
-      }
-
-      doc.text(
-        metierLabel,
-        cx,
-        ry + 1
-      );
-
-      cx += columns[0].width;
-
-
-      /* Consommé */
-
-      doc.text(
-        fmt1(r.encouru),
-        cx,
-        ry + 1
-      );
-
-      cx += columns[1].width;
-
-
-      /* Budget date */
-
-      doc.text(
-        fmt1(r.budgetDate),
-        cx,
-        ry + 1
-      );
-
-      cx += columns[2].width;
-
-
-      /* Budget alloué */
-
-      doc.text(
-        fmt1(r.budgetAlloue),
-        cx,
-        ry + 1
-      );
-
-      cx += columns[3].width;
-
-
-      /* Écart */
-
-      doc.text(
-        `${
-          r.ecartH > 0
-            ? "+"
-            : ""
-        }${fmt1(r.ecartH)}`,
-        cx,
-        ry + 1
-      );
-
-      cx += columns[4].width;
-
-
-      /* Conso */
-
-      doc.text(
-        `${fmt1(r.consoReelle)}%`,
-        cx,
-        ry + 1
-      );
-
-      cx += columns[5].width;
-
-
-      /* Statut */
-
-      const color =
-        getStatusColor(
-          r.statut
-        );
-
-      pdfColor(
-        doc,
-        color
-      );
-
-      doc.roundedRect(
-        cx,
-        ry - 2.5,
-        9,
-        3.5,
-        1,
-        1,
-        "F"
-      );
-
-      doc.setFontSize(3.5);
-
-      pdfTextColor(
-        doc,
-        [255, 255, 255]
-      );
-
-      doc.text(
-        getStatusLabel(
-          r.statut
+    {
+      label:
+        "Budget alloué",
+      value:
+        pdfNumber(
+          total.budgetAlloue
         ),
-        cx + 4.5,
-        ry,
+      unit: "h",
+      accent:
+        "#475569"
+    },
+
+    {
+      label:
+        "Heures consommées",
+      value:
+        pdfNumber(
+          total.encouru
+        ),
+      unit: "h",
+      accent:
+        "#2563eb"
+    },
+
+    {
+      label:
+        "Budget à date",
+      value:
+        pdfNumber(
+          total.budgetDate
+        ),
+      unit: "h",
+      accent:
+        "#16a34a"
+    },
+
+    {
+      label:
+        "Écart heures",
+      value:
+        pdfSigned(
+          total.ecartH
+        ),
+      unit: "h",
+      accent:
+        total.ecartH > 0
+          ? "#dc2626"
+          : "#16a34a",
+      sub:
+        total.ecartH > 0
+          ? "au-dessus du budget à date"
+          : "sous le budget à date"
+    },
+
+    {
+      label:
+        "Consommation",
+      value:
+        pdfNumber(
+          total.consoReelle,
+          1
+        ),
+      unit: "%",
+      accent:
+        "#ea580c",
+      sub:
+        `budget à date ${pdfNumber(
+          total.consoDate,
+          1
+        )} %`
+    },
+
+    {
+      label:
+        "Écart théorique",
+      value:
+        pdfSigned(
+          total.ecartPoints
+        ),
+      unit: "pts",
+      accent:
+        total.ecartPoints > 10
+          ? "#dc2626"
+          : total.ecartPoints > 5
+            ? "#ea580c"
+            : "#16a34a"
+    }
+
+  ];
+
+
+  kpis.forEach(
+    (kpi, i) => {
+
+      drawKpi(
+        doc,
         {
-          align: "center"
+          ...kpi,
+          x:
+            marginX +
+            i *
+              (kpiW +
+                kpiGap),
+          y: kpiY,
+          w: kpiW,
+          h: kpiH
         }
       );
 
@@ -1389,239 +2216,211 @@ export function exportPDF(
   );
 
 
-  /* =======================================================
-     GRAPHIQUES
-     ======================================================= */
-
-  const graphX =
-    tableX +
-    tableWidth +
-    5;
-
-  const graphWidth =
-    pageWidth -
-    margin -
-    graphX;
-
-
   /*
-   * Deux graphiques côte à côte.
+   * =======================================================
+   * SECTION SYNTHÈSE
+   * =======================================================
    */
 
-  const graphGap = 5;
-
-  const graphWidthEach =
-    (graphWidth -
-      graphGap) /
-    2;
+  const sectionY =
+    54;
 
 
-  const graphHeight = 62;
-
-
-  /*
-   * Graphique 1
-   */
-
-  drawHorizontalBars(
+  sectionTitle(
     doc,
-    {
-      x: graphX,
-      y: sectionY + 5,
-      width: graphWidthEach,
-      height: graphHeight,
-      data: lignes,
-      value1: "budgetAlloue",
-      value2: "encouru",
-      label1: "Budget alloué",
-      label2: "Consommé",
-      title:
-        "Budget alloué vs consommé"
-    }
+    "SYNTHÈSE PAR MÉTIER",
+    `${lignes.length} métier(s) suivi(s)`,
+    marginX,
+    sectionY,
+    pageWidth -
+      marginX * 2
   );
 
 
   /*
-   * Graphique 2
+   * =======================================================
+   * TABLEAU + ANALYSE
+   * =======================================================
    */
 
-  drawHorizontalBars(
+  const contentY =
+    sectionY + 4;
+
+
+  const analysisWidth =
+    103;
+
+
+  const tableWidth =
+    pageWidth -
+    marginX * 2 -
+    analysisWidth -
+    4;
+
+
+  const tableHeight =
+    drawTable(
+      doc,
+      lignes,
+      total,
+      marginX,
+      contentY,
+      tableWidth
+    );
+
+
+  drawAnalysis(
     doc,
     {
       x:
-        graphX +
-        graphWidthEach +
-        graphGap,
-      y: sectionY + 5,
-      width: graphWidthEach,
-      height: graphHeight,
-      data: lignes,
-      value1: "budgetDate",
-      value2: "encouru",
-      label1: "Budget à date",
-      label2: "Consommé",
-      title:
-        "Consommé vs budget à date"
+        marginX +
+        tableWidth +
+        4,
+      y: contentY,
+      width:
+        analysisWidth,
+      height:
+        tableHeight,
+      total,
+      affaire:
+        meta.affaire ||
+        (
+          meta.affaires &&
+          meta.affaires !==
+            "Toutes"
+            ? meta.affaires
+            : ""
+        ),
+      date
     }
   );
 
 
   /*
-   * Graphique 3 :
-   * consommation en %
+   * =======================================================
+   * HISTOGRAMMES
+   * =======================================================
    */
 
-  const graph3Y =
-    sectionY +
-    graphHeight +
-    17;
+  const chartY =
+    contentY +
+    tableHeight +
+    5;
 
 
-  drawHorizontalBars(
+  const chartGap = 4;
+
+
+  const chartWidth =
+    (
+      pageWidth -
+      marginX * 2 -
+      chartGap
+    ) / 2;
+
+
+  /*
+   * Histogramme 1
+   */
+
+  drawHorizontalChart(
     doc,
     {
-      x: graphX,
-      y: graph3Y,
-      width: graphWidth,
-      height: 43,
-      data: lignes,
-      value1: "consoReelle",
-      value2: "consoDate",
-      label1: "Consommation réelle",
-      label2: "Budget à date",
       title:
-        "Taux de consommation",
-      percent: true,
-      maxValue:
-        Math.max(
-          100,
-          ...lignes.map(
-            r =>
-              Number(
-                r.consoReelle
-              ) || 0
-          ),
-          ...lignes.map(
-            r =>
-              Number(
-                r.consoDate
-              ) || 0
-          )
-        )
+        "Budget alloué vs consommé",
+      subtitle:
+        "Comparaison des heures par métier",
+      data:
+        lignes,
+      x:
+        marginX,
+      y:
+        chartY,
+      width:
+        chartWidth,
+      height:
+        57,
+      valueA:
+        "budgetAlloue",
+      valueB:
+        "encouru",
+      labelA:
+        "Budget",
+      labelB:
+        "Consommé",
+      colorA:
+        "#94a3b8",
+      colorB:
+        "#2563eb"
     }
   );
 
 
-  /* =======================================================
-     ANALYSE
-     ======================================================= */
+  /*
+   * Histogramme 2
+   */
 
-  const analysisX =
-    margin;
-
-  const analysisY =
-    sectionY +
-    tableHeight +
-    4;
-
-  const analysisWidth =
-    contentWidth;
-
-  const analysisHeight =
-    pageHeight -
-    analysisY -
-    7;
-
-
-  roundedBox(
+  drawHorizontalChart(
     doc,
-    analysisX,
-    analysisY,
-    analysisWidth,
-    analysisHeight,
-    [255, 255, 255],
-    2
-  );
-
-
-  doc.setFont(
-    "helvetica",
-    "bold"
-  );
-
-  doc.setFontSize(7);
-
-  pdfTextColor(
-    doc,
-    [15, 23, 42]
-  );
-
-  doc.text(
-    "Analyse de pilotage",
-    analysisX + 5,
-    analysisY + 6
+    {
+      title:
+        "Consommé vs budget à date",
+      subtitle:
+        "Indicateur principal de pilotage",
+      data:
+        lignes,
+      x:
+        marginX +
+        chartWidth +
+        chartGap,
+      y:
+        chartY,
+      width:
+        chartWidth,
+      height:
+        57,
+      valueA:
+        "budgetDate",
+      valueB:
+        "encouru",
+      labelA:
+        "Budget à date",
+      labelB:
+        "Consommé",
+      colorA:
+        "#a7f3d0",
+      colorB:
+        "#0891b2"
+    }
   );
 
 
   /*
-   * Texte automatique en fonction
-   * du résultat du dashboard.
+   * =======================================================
+   * FOOTER
+   * =======================================================
    */
 
-  const ecartH =
-    Number(
-      total.ecartH
-    ) || 0;
-
-  const ecartPts =
-    Number(
-      total.ecartPoints
-    ) || 0;
-
-  const conso =
-    Number(
-      total.consoReelle
-    ) || 0;
-
-  const consoDate =
-    Number(
-      total.consoDate
-    ) || 0;
+  const footerY =
+    pageHeight - 5;
 
 
-  let analysisText = "";
+  setDrawHex(
+    doc,
+    "#dbe3ee"
+  );
 
+  doc.setLineWidth(
+    0.25
+  );
 
-  if (ecartH > 0) {
-
-    analysisText =
-      `La consommation cumulée est supérieure de ` +
-      `${fmt1(Math.abs(ecartH))} h ` +
-      `au budget à date. ` +
-      `La consommation réelle atteint ` +
-      `${fmt1(conso)} % du budget alloué, ` +
-      `contre ${fmt1(consoDate)} % selon le budget à date.`;
-
-  } else {
-
-    analysisText =
-      `La consommation cumulée est inférieure de ` +
-      `${fmt1(Math.abs(ecartH))} h ` +
-      `au budget à date. ` +
-      `La consommation réelle atteint ` +
-      `${fmt1(conso)} % du budget alloué, ` +
-      `contre ${fmt1(consoDate)} % selon le budget à date.`;
-
-  }
-
-
-  const textLines =
-    fitText(
-      doc,
-      analysisText,
-      145,
-      6
-    );
+  doc.line(
+    marginX,
+    footerY - 3,
+    pageWidth -
+      marginX,
+    footerY - 3
+  );
 
 
   doc.setFont(
@@ -1629,154 +2428,86 @@ export function exportPDF(
     "normal"
   );
 
-  doc.setFontSize(6);
+  doc.setFontSize(4.5);
 
-  pdfTextColor(
+  setTextHex(
     doc,
-    [71, 85, 105]
+    "#64748b"
   );
+
 
   doc.text(
-    textLines,
-    analysisX + 5,
-    analysisY + 12
+    "PilotageH · Rapport généré automatiquement",
+    marginX,
+    footerY
   );
 
 
-  /*
-   * Petits indicateurs à droite
-   */
-
-  const infoX =
-    analysisX +
-    165;
-
-  const info = [
-
-    [
-      "Écart heures",
-      `${
-        ecartH > 0
-          ? "+"
-          : ""
-      }${fmt1(ecartH)} h`
-    ],
-
-    [
-      "Écart points",
-      `${
-        ecartPts > 0
-          ? "+"
-          : ""
-      }${fmt1(ecartPts)} pts`
-    ],
-
-    [
-      "Reste",
-      `${fmt1(total.reste)} h`
-    ]
-
-  ];
-
-
-  info.forEach(
-    (item, index) => {
-
-      const ix =
-        infoX +
-        index * 34;
-
-      doc.setFontSize(4.5);
-
-      pdfTextColor(
-        doc,
-        [100, 116, 139]
-      );
-
-      doc.text(
-        item[0],
-        ix,
-        analysisY + 7
-      );
-
-      doc.setFont(
-        "helvetica",
-        "bold"
-      );
-
-      doc.setFontSize(7);
-
-      pdfTextColor(
-        doc,
-        [15, 23, 42]
-      );
-
-      doc.text(
-        item[1],
-        ix,
-        analysisY + 13
-      );
-
-      doc.setFont(
-        "helvetica",
-        "normal"
-      );
-
+  doc.text(
+    affaire &&
+      affaire !== "Toutes"
+      ? `Analyse filtrée : ${safeText(
+          affaire
+        )}`
+      : "Analyse globale",
+    pageWidth / 2,
+    footerY,
+    {
+      align: "center"
     }
   );
 
 
-  /* =======================================================
-     PIED DE PAGE
-     ======================================================= */
-
-  doc.setFontSize(4.5);
-
-  pdfTextColor(
-    doc,
-    [148, 163, 184]
-  );
-
   doc.text(
-    "PilotageH — Rapport généré automatiquement à partir des données d'alimentation",
-    margin,
-    pageHeight - 3
-  );
-
-  doc.text(
-    "A4 paysage",
-    pageWidth - margin,
-    pageHeight - 3,
+    `${lignes.length} métier(s)`,
+    pageWidth -
+      marginX,
+    footerY,
     {
       align: "right"
     }
   );
 
 
-  /* =======================================================
-     SAUVEGARDE
-     ======================================================= */
+  /*
+   * =======================================================
+   * EXPORT
+   * =======================================================
+   */
+
+  const filename =
+    affaire &&
+    affaire !== "Toutes"
+      ? `pilotageh_rapport_${safeText(
+          affaire
+        )
+          .replace(
+            /[^a-zA-Z0-9_-]/g,
+            "_"
+          )}.pdf`
+      : "pilotageh_rapport.pdf";
+
 
   doc.save(
-    "pilotageh_rapport.pdf"
+    filename
   );
 }
 
 
-/* =========================================================
-   MODÈLE EXCEL
-   ========================================================= */
+// =========================================================
+// MODÈLE EXCEL
+// =========================================================
 
 export function downloadTemplate() {
 
   const data = [
+
     [
       "Affaire",
       "Métier",
       "Heures consommées",
       "Budget à date",
-      "Budget alloué",
-      "Date"
+      "Budget alloué"
     ],
 
     [
@@ -1784,19 +2515,39 @@ export function downloadTemplate() {
       "Mécanique",
       120,
       150,
-      300,
-      "2026-09-18"
+      300
     ]
+
   ];
+
 
   const wb =
     XLSX.utils.book_new();
 
+
+  const ws =
+    XLSX.utils.aoa_to_sheet(
+      data
+    );
+
+
+  ws["!cols"] = [
+
+    { wch: 20 },
+    { wch: 25 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 18 }
+
+  ];
+
+
   XLSX.utils.book_append_sheet(
     wb,
-    XLSX.utils.aoa_to_sheet(data),
+    ws,
     "Alimentation"
   );
+
 
   XLSX.writeFile(
     wb,
