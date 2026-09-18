@@ -1,24 +1,40 @@
-import { METIERS } from "./calculs";
+import { syncMetiers } from "./calculs";
 import { supabase } from "./lib/supabaseClient";
 
 const SET = "pilotageh_settings_v2";
 
+
 export const DEFAULT_SETTINGS = {
   green: 5,
   orange: 10,
-  dateAnalyse: new Date().toISOString().slice(0, 10)
+  dateAnalyse: new Date()
+    .toISOString()
+    .slice(0, 10)
 };
 
 
-export async function loadData(){
+// =========================================================
+// CHARGEMENT DES DONNÉES
+// =========================================================
 
-  const {data,error}=await supabase
+export async function loadData() {
+
+  const {
+    data,
+    error
+  } = await supabase
     .from("pilotage")
     .select("*")
-    .order("affaire",{ascending:true})
-    .order("metier",{ascending:true});
+    .order("affaire", {
+      ascending: true
+    })
+    .order("metier", {
+      ascending: true
+    });
 
-  if(error){
+
+  if (error) {
+
     console.error(
       "Erreur chargement Supabase :",
       error
@@ -27,43 +43,76 @@ export async function loadData(){
     return [];
   }
 
-  return(data||[]).map(row=>({
 
-    id:row.id,
+  const rows =
+    (data || []).map(row => ({
 
-    affaire:row.affaire,
+      id: row.id,
 
-    metier:row.metier,
+      affaire:
+        String(
+          row.affaire ?? ""
+        ).trim(),
 
-    encouru:
-      Number(row.heures_consommees)||0,
+      metier:
+        String(
+          row.metier ?? ""
+        ).trim(),
 
-    budgetDate:
-      Number(row.budget_a_date)||0,
+      encouru:
+        Number(
+          row.heures_consommees
+        ) || 0,
 
-    budgetAlloue:
-      Number(row.budget_alloue)||0,
+      budgetDate:
+        Number(
+          row.budget_a_date
+        ) || 0,
 
-    date:row.date||""
+      budgetAlloue:
+        Number(
+          row.budget_alloue
+        ) || 0,
 
-  }));
+      date:
+        row.date || ""
+
+    }));
+
+
+  // IMPORTANT :
+  // les métiers sont déterminés uniquement
+  // à partir des données réellement présentes.
+  syncMetiers(rows);
+
+
+  return rows;
 }
 
 
-export async function saveData(rows){
+// =========================================================
+// ENREGISTREMENT DES DONNÉES
+// =========================================================
+
+export async function saveData(rows) {
 
   /*
-   * Remplacement complet des données.
-   * Cette fonction est appelée uniquement
-   * depuis la zone d'administration.
+   * Remplacement complet.
+   *
+   * Le contenu actuel de Supabase est supprimé,
+   * puis remplacé par le nouvel Excel.
    */
 
-  const {error:deleteError}=await supabase
+
+  const {
+    error: deleteError
+  } = await supabase
     .from("pilotage")
     .delete()
-    .not("id","is",null);
+    .not("id", "is", null);
 
-  if(deleteError){
+
+  if (deleteError) {
 
     console.error(
       "Erreur suppression Supabase :",
@@ -74,43 +123,73 @@ export async function saveData(rows){
   }
 
 
-  if(!rows || rows.length===0){
+  // Aucun enregistrement
+
+  if (
+    !rows ||
+    rows.length === 0
+  ) {
+
+    syncMetiers([]);
 
     window.dispatchEvent(
-      new Event("pilotageh-data")
+      new Event(
+        "pilotageh-data"
+      )
     );
 
     return;
   }
 
 
-  const dataToInsert=rows.map(row=>({
+  // Préparation
 
-    affaire:row.affaire,
+  const dataToInsert =
+    rows.map(row => ({
 
-    metier:row.metier,
+      affaire:
+        String(
+          row.affaire ?? ""
+        ).trim(),
 
-    heures_consommees:
-      Number(row.encouru)||0,
+      metier:
+        String(
+          row.metier ?? ""
+        ).trim(),
 
-    budget_a_date:
-      Number(row.budgetDate)||0,
+      heures_consommees:
+        Number(
+          row.encouru
+        ) || 0,
 
-    budget_alloue:
-      Number(row.budgetAlloue)||0,
+      budget_a_date:
+        Number(
+          row.budgetDate
+        ) || 0,
 
-    date:
-      row.date||null
+      budget_alloue:
+        Number(
+          row.budgetAlloue
+        ) || 0,
 
-  }));
+      date:
+        row.date || null
+
+    }));
 
 
-  const {error:insertError}=await supabase
+  // Insertion
+
+  const {
+    error: insertError
+  } = await supabase
     .from("pilotage")
-    .insert(dataToInsert);
+    .insert(
+      dataToInsert
+    );
 
 
-  if(insertError){
+  if (insertError) {
 
     console.error(
       "Erreur insertion Supabase :",
@@ -121,21 +200,34 @@ export async function saveData(rows){
   }
 
 
+  // Synchronisation immédiate
+  syncMetiers(rows);
+
+
+  // Notification de l'application
   window.dispatchEvent(
-    new Event("pilotageh-data")
+    new Event(
+      "pilotageh-data"
+    )
   );
 }
 
 
-export async function resetData(){
+// =========================================================
+// SUPPRESSION
+// =========================================================
 
-  const {error}=await supabase
+export async function resetData() {
+
+  const {
+    error
+  } = await supabase
     .from("pilotage")
     .delete()
-    .not("id","is",null);
+    .not("id", "is", null);
 
 
-  if(error){
+  if (error) {
 
     console.error(
       "Erreur suppression Supabase :",
@@ -146,32 +238,46 @@ export async function resetData(){
   }
 
 
+  syncMetiers([]);
+
+
   window.dispatchEvent(
-    new Event("pilotageh-data")
+    new Event(
+      "pilotageh-data"
+    )
   );
 }
 
 
-export function loadSettings(){
+// =========================================================
+// PARAMÈTRES
+// =========================================================
 
-  try{
+export function loadSettings() {
 
-    return{
+  try {
+
+    return {
       ...DEFAULT_SETTINGS,
+
       ...JSON.parse(
-        localStorage.getItem(SET)||"{}"
+        localStorage.getItem(
+          SET
+        ) || "{}"
       )
     };
 
-  }catch{
+  } catch {
 
-    return DEFAULT_SETTINGS;
+    return {
+      ...DEFAULT_SETTINGS
+    };
 
   }
 }
 
 
-export function saveSettings(s){
+export function saveSettings(s) {
 
   localStorage.setItem(
     SET,
@@ -179,67 +285,69 @@ export function saveSettings(s){
   );
 
   window.dispatchEvent(
-    new Event("pilotageh-settings")
+    new Event(
+      "pilotageh-settings"
+    )
   );
 }
 
 
-export function ensureMetier(m){
+// =========================================================
+// TEMPS RÉEL SUPABASE
+// =========================================================
 
-  return METIERS.includes(m);
+export function subscribeToDataChanges() {
 
-}
+  const channel =
+    supabase
+      .channel(
+        "pilotageh-data-changes"
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pilotage"
+        },
+        payload => {
+
+          console.log(
+            "🔄 Modification Supabase détectée :",
+            payload
+          );
 
 
-/*
- * Temps réel Supabase
- *
- * Toute modification dans la table pilotage
- * déclenche un rechargement des données
- * dans les navigateurs connectés.
- */
+          /*
+           * useData() écoute cet événement
+           * et relance automatiquement loadData().
+           */
 
-export function subscribeToDataChanges(){
+          window.dispatchEvent(
+            new Event(
+              "pilotageh-data"
+            )
+          );
 
-  const channel=supabase
-    .channel("pilotageh-data-changes")
+        }
+      )
+      .subscribe(
+        status => {
 
-    .on(
-      "postgres_changes",
-      {
-        event:"*",
-        schema:"public",
-        table:"pilotage"
-      },
+          console.log(
+            "📡 Statut Realtime :",
+            status
+          );
 
-      payload=>{
-
-        console.log(
-          "🔄 Modification Supabase détectée :",
-          payload
-        );
-
-        window.dispatchEvent(
-          new Event("pilotageh-data")
-        );
-
-      }
-    )
-
-    .subscribe(status=>{
-
-      console.log(
-        "📡 Statut Realtime :",
-        status
+        }
       );
 
-    });
 
+  return () => {
 
-  return()=>{
-
-    supabase.removeChannel(channel);
+    supabase.removeChannel(
+      channel
+    );
 
   };
-
 }

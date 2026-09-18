@@ -1,8 +1,12 @@
-// =========================
+// =========================================================
 // MÉTIERS
-// =========================
+// =========================================================
 
-// Métiers historiques / connus
+/*
+ * Liste historique conservée uniquement comme référence.
+ * Elle n'impose PLUS aucun métier à l'application.
+ */
+
 export const BASE_METIERS = [
   "Mécanique",
   "Fluide",
@@ -23,35 +27,73 @@ export const BASE_METIERS = [
   "Essais"
 ];
 
-// Liste dynamique utilisée par toute l'application
-export let METIERS = [...BASE_METIERS];
+
+/*
+ * Liste réellement utilisée par l'application.
+ *
+ * Elle est mise à jour par syncMetiers().
+ */
+
+export let METIERS = [];
+
 
 /**
- * Met à jour automatiquement la liste des métiers
- * à partir des données réellement présentes dans l'Excel / Supabase.
+ * Synchronise la liste des métiers avec les données.
+ *
+ * Exemple :
+ *
+ * Excel :
+ * Mécanique
+ * Essais
+ * Robotique
+ *
+ * devient :
+ *
+ * METIERS = [
+ *   "Essais",
+ *   "Mécanique",
+ *   "Robotique"
+ * ]
  */
-export function syncMetiers(rows = []) {
+
+export function syncMetiers(
+  rows = []
+) {
+
   const fromData = [
     ...new Set(
       rows
-        .map(r => String(r.metier ?? "").trim())
+        .map(
+          r =>
+            String(
+              r.metier ?? ""
+            ).trim()
+        )
         .filter(Boolean)
     )
   ];
 
-  METIERS = fromData.sort((a, b) =>
-    String(a).localeCompare(String(b), "fr")
-  );
+
+  METIERS =
+    fromData.sort(
+      (a, b) =>
+        String(a).localeCompare(
+          String(b),
+          "fr"
+        )
+    );
+
 
   return METIERS;
 }
 
 
-// =========================
+// =========================================================
 // COULEURS
-// =========================
+// =========================================================
 
 const BASE_COLORS = {
+
   "Mécanique": "#2563eb",
   "Fluide": "#0891b2",
   "Mesure": "#7c3aed",
@@ -69,9 +111,12 @@ const BASE_COLORS = {
   "Transverse": "#be123c",
   "MERI": "#7e22ce",
   "Essais": "#0f766e"
+
 };
 
+
 const EXTRA_COLORS = [
+
   "#0284c7",
   "#4f46e5",
   "#9333ea",
@@ -87,73 +132,114 @@ const EXTRA_COLORS = [
   "#0d9488",
   "#0891b2",
   "#2563eb"
+
 ];
 
-/**
- * Génère une couleur stable pour un nouveau métier.
- * Le même métier conservera toujours la même couleur.
- */
-export function getColor(metier) {
-  if (BASE_COLORS[metier]) {
+
+export function getColor(
+  metier
+) {
+
+  if (
+    BASE_COLORS[metier]
+  ) {
     return BASE_COLORS[metier];
   }
 
+
   let hash = 0;
 
-  for (let i = 0; i < String(metier).length; i++) {
+
+  for (
+    let i = 0;
+    i < String(metier).length;
+    i++
+  ) {
+
     hash =
-      String(metier).charCodeAt(i) +
+      String(metier)
+        .charCodeAt(i) +
       ((hash << 5) - hash);
+
   }
 
+
   return EXTRA_COLORS[
-    Math.abs(hash) % EXTRA_COLORS.length
+    Math.abs(hash) %
+    EXTRA_COLORS.length
   ];
 }
 
-// Proxy : COLORS["Nouveau métier"] fonctionne automatiquement
-export const COLORS = new Proxy(BASE_COLORS, {
-  get(target, property) {
-    if (typeof property !== "string") {
-      return undefined;
+
+export const COLORS =
+  new Proxy(
+    BASE_COLORS,
+    {
+
+      get(
+        target,
+        property
+      ) {
+
+        if (
+          typeof property !==
+          "string"
+        ) {
+          return undefined;
+        }
+
+        return getColor(
+          property
+        );
+
+      }
+
     }
-
-    return getColor(property);
-  }
-});
+  );
 
 
-// =========================
-// COULEURS DES STATUTS
-// =========================
+// =========================================================
+// COULEURS STATUTS
+// =========================================================
 
 export const STATUS_COLORS = {
+
   vert: "#16a34a",
+
   orange: "#ea580c",
+
   rouge: "#dc2626"
+
 };
 
 
-// =========================
-// UTILITAIRES NUMÉRIQUES
-// =========================
+// =========================================================
+// UTILITAIRES
+// =========================================================
 
 export function round2(v) {
-  return Math.round((Number(v) || 0) * 100) / 100;
+
+  return Math.round(
+    (Number(v) || 0) * 100
+  ) / 100;
+
 }
 
+
 export function n(v) {
+
   return Number(
     String(v ?? "")
       .replace(/\s/g, "")
       .replace(",", ".")
   ) || 0;
+
 }
 
 
-// =========================
+// =========================================================
 // STATUT
-// =========================
+// =========================================================
 
 export function status(
   ecartPts,
@@ -161,149 +247,307 @@ export function status(
   green = 5,
   orange = 10
 ) {
-  // Dépassement du budget alloué = critique
-  if (ecartBudgetAlloue > 0) {
+
+  /*
+   * Dépassement du budget total
+   * = critique.
+   */
+
+  if (
+    ecartBudgetAlloue > 0
+  ) {
+
     return "rouge";
+
   }
 
-  if (ecartPts <= green) {
+
+  /*
+   * Écart par rapport
+   * au budget à date.
+   */
+
+  if (
+    ecartPts <= green
+  ) {
+
     return "vert";
+
   }
 
-  if (ecartPts <= orange) {
+
+  if (
+    ecartPts <= orange
+  ) {
+
     return "orange";
+
   }
+
 
   return "rouge";
+
 }
 
-export function statusLabel(s) {
-  return ({
+
+export function statusLabel(
+  s
+) {
+
+  return {
+
     vert: "Favorable",
+
     orange: "Vigilance",
+
     rouge: "Critique"
-  })[s] || "—";
+
+  }[s] || "—";
+
 }
 
 
-// =========================
+// =========================================================
 // SYNTHÈSE
-// =========================
+// =========================================================
 
 export function synthese(
   rows,
   metiers = METIERS,
   filtres = {},
-  thresholds = { green: 5, orange: 10 }
+  thresholds = {
+    green: 5,
+    orange: 10
+  }
 ) {
-  // Sécurité : on récupère les métiers réellement présents
+
+  /*
+   * IMPORTANT :
+   *
+   * On recalcule les métiers directement
+   * depuis les lignes reçues.
+   *
+   * Cela évite qu'un ancien métier reste
+   * affiché après un nouvel import.
+   */
+
   const metiersDynamiques = [
     ...new Set(
-      metiers
-        .map(m => String(m ?? "").trim())
-        .filter(Boolean)
-    )
-  ];
 
-  const filtered = rows.filter(r =>
-    (!filtres.affaire || r.affaire === filtres.affaire) &&
-    (!filtres.metier || r.metier === filtres.metier) &&
-    (!filtres.date || !r.date || r.date === filtres.date)
+      rows
+        .map(
+          r =>
+            String(
+              r.metier ?? ""
+            ).trim()
+        )
+        .filter(Boolean)
+
+    )
+
+  ].sort(
+    (a, b) =>
+      String(a).localeCompare(
+        String(b),
+        "fr"
+      )
   );
 
-  const lignes = metiersDynamiques.map(m => {
-    const rs = filtered.filter(r => r.metier === m);
 
-    const encouru = rs.reduce(
-      (s, r) => s + n(r.encouru),
-      0
+  // =======================================================
+  // FILTRES
+  // =======================================================
+
+  const filtered =
+    rows.filter(
+      r =>
+
+        (
+          !filtres.affaire ||
+          r.affaire ===
+          filtres.affaire
+        )
+
+        &&
+
+        (
+          !filtres.metier ||
+          r.metier ===
+          filtres.metier
+        )
+
+        &&
+
+        (
+          !filtres.date ||
+          !r.date ||
+          r.date ===
+          filtres.date
+        )
+
     );
 
-    const budgetDate = rs.reduce(
-      (s, r) => s + n(r.budgetDate),
-      0
+
+  // =======================================================
+  // CALCUL PAR MÉTIER
+  // =======================================================
+
+  const lignes =
+    metiersDynamiques.map(
+      m => {
+
+        const rs =
+          filtered.filter(
+            r =>
+              r.metier === m
+          );
+
+
+        const encouru =
+          rs.reduce(
+            (s, r) =>
+              s + n(
+                r.encouru
+              ),
+            0
+          );
+
+
+        const budgetDate =
+          rs.reduce(
+            (s, r) =>
+              s + n(
+                r.budgetDate
+              ),
+            0
+          );
+
+
+        const budgetAlloue =
+          rs.reduce(
+            (s, r) =>
+              s + n(
+                r.budgetAlloue
+              ),
+            0
+          );
+
+
+        const consoReelle =
+          budgetAlloue > 0
+            ? encouru /
+              budgetAlloue *
+              100
+            : 0;
+
+
+        const consoDate =
+          budgetAlloue > 0
+            ? budgetDate /
+              budgetAlloue *
+              100
+            : 0;
+
+
+        const ecartH =
+          encouru -
+          budgetDate;
+
+
+        const ecartPoints =
+          consoReelle -
+          consoDate;
+
+
+        const ecartBudgetAlloue =
+          encouru -
+          budgetAlloue;
+
+
+        return {
+
+          metier: m,
+
+          encouru:
+            round2(
+              encouru
+            ),
+
+          budgetDate:
+            round2(
+              budgetDate
+            ),
+
+          budgetAlloue:
+            round2(
+              budgetAlloue
+            ),
+
+          reste:
+            round2(
+              budgetAlloue -
+              encouru
+            ),
+
+          consoReelle:
+            round2(
+              consoReelle
+            ),
+
+          consoDate:
+            round2(
+              consoDate
+            ),
+
+          ecartH:
+            round2(
+              ecartH
+            ),
+
+          ecartPoints:
+            round2(
+              ecartPoints
+            ),
+
+          ecartBudgetAlloue:
+            round2(
+              ecartBudgetAlloue
+            ),
+
+          statut:
+            status(
+              ecartPoints,
+              ecartBudgetAlloue,
+              thresholds.green,
+              thresholds.orange
+            )
+
+        };
+
+      }
     );
 
-    const budgetAlloue = rs.reduce(
-      (s, r) => s + n(r.budgetAlloue),
-      0
-    );
-
-    const consoReelle =
-      budgetAlloue > 0
-        ? encouru / budgetAlloue * 100
-        : 0;
-
-    const consoDate =
-      budgetAlloue > 0
-        ? budgetDate / budgetAlloue * 100
-        : 0;
-
-    const ecartH =
-      encouru - budgetDate;
-
-    const ecartPoints =
-      consoReelle - consoDate;
-
-    const ecartBudgetAlloue =
-      encouru - budgetAlloue;
-
-    return {
-      metier: m,
-
-      encouru: round2(encouru),
-
-      budgetDate: round2(budgetDate),
-
-      budgetAlloue: round2(budgetAlloue),
-
-      reste: round2(
-        budgetAlloue - encouru
-      ),
-
-      consoReelle: round2(
-        consoReelle
-      ),
-
-      consoDate: round2(
-        consoDate
-      ),
-
-      ecartH: round2(
-        ecartH
-      ),
-
-      ecartPoints: round2(
-        ecartPoints
-      ),
-
-      ecartBudgetAlloue: round2(
-        ecartBudgetAlloue
-      ),
-
-      statut: status(
-        ecartPoints,
-        ecartBudgetAlloue,
-        thresholds.green,
-        thresholds.orange
-      )
-    };
-  });
 
   return {
+
     lignes,
-    total: aggregate(
-      lignes,
-      thresholds
-    ),
+
+    total:
+      aggregate(
+        lignes,
+        thresholds
+      ),
+
     filtered
+
   };
+
 }
 
 
-// =========================
+// =========================================================
 // TOTAL
-// =========================
+// =========================================================
 
 export function aggregate(
   lignes,
@@ -312,94 +556,146 @@ export function aggregate(
     orange: 10
   }
 ) {
-  const encouru = lignes.reduce(
-    (s, r) => s + r.encouru,
-    0
-  );
 
-  const budgetDate = lignes.reduce(
-    (s, r) => s + r.budgetDate,
-    0
-  );
+  const encouru =
+    lignes.reduce(
+      (s, r) =>
+        s + r.encouru,
+      0
+    );
 
-  const budgetAlloue = lignes.reduce(
-    (s, r) => s + r.budgetAlloue,
-    0
-  );
+
+  const budgetDate =
+    lignes.reduce(
+      (s, r) =>
+        s + r.budgetDate,
+      0
+    );
+
+
+  const budgetAlloue =
+    lignes.reduce(
+      (s, r) =>
+        s + r.budgetAlloue,
+      0
+    );
+
 
   const consoReelle =
     budgetAlloue
-      ? encouru / budgetAlloue * 100
+      ? encouru /
+        budgetAlloue *
+        100
       : 0;
+
 
   const consoDate =
     budgetAlloue
-      ? budgetDate / budgetAlloue * 100
+      ? budgetDate /
+        budgetAlloue *
+        100
       : 0;
 
+
   const ecartH =
-    encouru - budgetDate;
+    encouru -
+    budgetDate;
+
 
   const ecartPoints =
-    consoReelle - consoDate;
+    consoReelle -
+    consoDate;
+
 
   const ecartBudgetAlloue =
-    encouru - budgetAlloue;
+    encouru -
+    budgetAlloue;
+
 
   return {
+
     metier: "TOTAL",
 
-    encouru: round2(encouru),
+    encouru:
+      round2(
+        encouru
+      ),
 
-    budgetDate: round2(budgetDate),
+    budgetDate:
+      round2(
+        budgetDate
+      ),
 
-    budgetAlloue: round2(budgetAlloue),
+    budgetAlloue:
+      round2(
+        budgetAlloue
+      ),
 
-    reste: round2(
-      budgetAlloue - encouru
-    ),
+    reste:
+      round2(
+        budgetAlloue -
+        encouru
+      ),
 
-    consoReelle: round2(
-      consoReelle
-    ),
+    consoReelle:
+      round2(
+        consoReelle
+      ),
 
-    consoDate: round2(
-      consoDate
-    ),
+    consoDate:
+      round2(
+        consoDate
+      ),
 
-    ecartH: round2(
-      ecartH
-    ),
+    ecartH:
+      round2(
+        ecartH
+      ),
 
-    ecartPoints: round2(
-      ecartPoints
-    ),
+    ecartPoints:
+      round2(
+        ecartPoints
+      ),
 
-    ecartBudgetAlloue: round2(
-      ecartBudgetAlloue
-    ),
+    ecartBudgetAlloue:
+      round2(
+        ecartBudgetAlloue
+      ),
 
-    statut: status(
-      ecartPoints,
-      ecartBudgetAlloue,
-      thresholds.green,
-      thresholds.orange
-    )
+    statut:
+      status(
+        ecartPoints,
+        ecartBudgetAlloue,
+        thresholds.green,
+        thresholds.orange
+      )
+
   };
+
 }
 
 
-// =========================
+// =========================================================
 // DISTINCT
-// =========================
+// =========================================================
 
-export function distinct(rows, key) {
+export function distinct(
+  rows,
+  key
+) {
+
   return [
+
     ...new Set(
+
       rows
-        .map(r => r[key])
+        .map(
+          r => r[key]
+        )
         .filter(Boolean)
+
     )
+
   ].sort(
     (a, b) =>
       String(a).localeCompare(
@@ -407,14 +703,16 @@ export function distinct(rows, key) {
         "fr"
       )
   );
+
 }
 
 
-// =========================
+// =========================================================
 // FORMATAGE
-// =========================
+// =========================================================
 
 export function fmt(v) {
+
   return new Intl.NumberFormat(
     "fr-FR",
     {
@@ -423,9 +721,12 @@ export function fmt(v) {
   ).format(
     Number(v) || 0
   );
+
 }
 
+
 export function fmt1(v) {
+
   return new Intl.NumberFormat(
     "fr-FR",
     {
@@ -434,33 +735,54 @@ export function fmt1(v) {
   ).format(
     Number(v) || 0
   );
+
 }
+
 
 export function pct(v) {
+
   return `${fmt1(v)} %`;
+
 }
 
+
 export function sign(v) {
+
   return `${
     v > 0 ? "+" : ""
   }${fmt(v)}`;
+
 }
 
 
-// =========================
+// =========================================================
 // IMPORT EXCEL
-// =========================
+// =========================================================
 
-export function normalizeHeader(s) {
-  return String(s ?? "")
+export function normalizeHeader(
+  s
+) {
+
+  return String(
+    s ?? ""
+  )
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
+    .replace(
+      /[^a-z0-9]/g,
+      ""
+    );
+
 }
 
+
 export const HEADER_ALIASES = {
+
   affaire: [
     "affaire",
     "projet",
@@ -502,33 +824,68 @@ export const HEADER_ALIASES = {
     "dateanalyse",
     "datemaj"
   ]
+
 };
 
-export function mapColumns(headers) {
+
+export function mapColumns(
+  headers
+) {
+
   const out = {};
 
-  headers.forEach(h => {
-    const k = normalizeHeader(h);
 
-    for (
-      const [target, aliases]
-      of Object.entries(HEADER_ALIASES)
-    ) {
-      if (aliases.includes(k)) {
-        out[target] = h;
-        break;
+  headers.forEach(
+    h => {
+
+      const k =
+        normalizeHeader(h);
+
+
+      for (
+        const [
+          target,
+          aliases
+        ]
+        of Object.entries(
+          HEADER_ALIASES
+        )
+      ) {
+
+        if (
+          aliases.includes(k)
+        ) {
+
+          out[target] =
+            h;
+
+          break;
+
+        }
+
       }
+
     }
-  });
+  );
+
 
   return out;
+
 }
 
 
-// =========================
+// =========================================================
 // VALIDATION MÉTIER
-// =========================
+// =========================================================
 
-export function ensureMetier(m) {
-  return METIERS.includes(m);
+export function ensureMetier(
+  m
+) {
+
+  return Boolean(
+    String(
+      m ?? ""
+    ).trim()
+  );
+
 }
