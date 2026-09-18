@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-
 import {
   BrowserRouter,
   Routes,
@@ -90,126 +89,78 @@ import {
    ========================================================= */
 
 function useData() {
-
   const [rows, setRows] = useState([]);
-
-  const [settings, setSettings] =
-    useState(loadSettings());
-
+  const [settings, setSettings] = useState(loadSettings());
 
   useEffect(() => {
-
     let mounted = true;
 
-
     const load = async () => {
-
       try {
+        const data = await loadData();
 
-        const data =
-          await loadData();
-
-
-        if (!mounted) {
-          return;
-        }
-
-
-        /*
-         * IMPORTANT :
-         * les métiers sont reconstruits
-         * directement depuis les données Excel.
-         */
+        if (!mounted) return;
 
         syncMetiers(data);
-
         setRows(data);
-
       } catch (error) {
-
         console.error(
           "Erreur chargement des données :",
           error
         );
-
       }
-
     };
 
-
     load();
-
 
     const onData = () => {
       load();
     };
 
-
     const onSettings = () => {
-
       if (mounted) {
-
-        setSettings(
-          loadSettings()
-        );
-
+        setSettings(loadSettings());
       }
-
     };
-
 
     window.addEventListener(
       "pilotageh-data",
       onData
     );
 
-
     window.addEventListener(
       "pilotageh-settings",
       onSettings
     );
 
-
     const unsubscribeRealtime =
       subscribeToDataChanges();
 
-
     return () => {
-
       mounted = false;
-
 
       window.removeEventListener(
         "pilotageh-data",
         onData
       );
 
-
       window.removeEventListener(
         "pilotageh-settings",
         onSettings
       );
 
-
       if (
-        typeof unsubscribeRealtime ===
-        "function"
+        typeof unsubscribeRealtime === "function"
       ) {
-
         unsubscribeRealtime();
-
       }
-
     };
-
   }, []);
-
 
   return {
     rows,
     settings
   };
-
 }
 
 
@@ -222,39 +173,23 @@ function Header({
   subtitle,
   actions
 }) {
-
   return (
-
     <div className="pagehead">
-
       <div>
-
-        <h1>
-          {title}
-        </h1>
-
-        <p>
-          {subtitle}
-        </p>
-
+        <h1>{title}</h1>
+        <p>{subtitle}</p>
       </div>
-
 
       <div className="actions">
-
         {actions}
-
       </div>
-
     </div>
-
   );
-
 }
 
 
 /* =========================================================
-   GRAPHIQUE MÉTIERS
+   GRAPHIQUE HORIZONTAL SCROLLABLE
    ========================================================= */
 
 function MetiersBarChart({
@@ -262,18 +197,12 @@ function MetiersBarChart({
   bars,
   yAxisUnit
 }) {
-
   /*
-   * Largeur minimale par métier.
+   * Largeur dynamique :
+   * environ 120 px par métier.
    *
-   * 120 px permet d'éviter que les noms
-   * des métiers se chevauchent.
-   *
-   * Si 20 métiers existent :
-   * 20 × 120 = 2400 px
-   *
-   * Le conteneur devient alors horizontalement
-   * défilable.
+   * Cela permet d'afficher tous les métiers
+   * sans qu'ils se chevauchent.
    */
 
   const chartWidth =
@@ -282,97 +211,74 @@ function MetiersBarChart({
       data.length * 120
     );
 
-
   return (
-
     <div
       style={{
         width: "100%",
         overflowX: "auto",
         overflowY: "hidden",
-        paddingBottom: "10px"
+        paddingBottom: "8px"
       }}
     >
-
       <div
         style={{
           width: `${chartWidth}px`,
           minWidth: "100%",
-          height: "320px"
+          height: "300px"
         }}
       >
-
         <ResponsiveContainer
           width="100%"
           height="100%"
         >
-
           <BarChart
             data={data}
             margin={{
-              top: 15,
-              right: 25,
-              bottom: 75,
-              left: 10
+              top: 10,
+              right: 20,
+              bottom: 65,
+              left: 0
             }}
-            barCategoryGap="18%"
           >
-
             <CartesianGrid
               strokeDasharray="3 3"
               vertical={false}
             />
-
 
             <XAxis
               dataKey="metier"
               interval={0}
               angle={-25}
               textAnchor="end"
-              height={90}
+              height={80}
               tick={{
                 fontSize: 10
               }}
             />
 
-
             <YAxis
               unit={yAxisUnit || ""}
             />
 
-
             <Tooltip />
-
 
             {bars.length > 1 && (
               <Legend />
             )}
 
-
-            {bars.map(
-              bar => (
-
-                <Bar
-                  key={bar.dataKey}
-                  dataKey={bar.dataKey}
-                  name={bar.name}
-                  fill={bar.fill}
-                  maxBarSize={35}
-                />
-
-              )
-            )}
-
+            {bars.map(bar => (
+              <Bar
+                key={bar.dataKey}
+                dataKey={bar.dataKey}
+                name={bar.name}
+                fill={bar.fill}
+              />
+            ))}
           </BarChart>
-
         </ResponsiveContainer>
-
       </div>
-
     </div>
-
   );
-
 }
 
 
@@ -381,12 +287,10 @@ function MetiersBarChart({
    ========================================================= */
 
 function Dashboard() {
-
   const {
     rows,
     settings
   } = useData();
-
 
   const [
     searchParams,
@@ -395,165 +299,97 @@ function Dashboard() {
 
 
   /*
-   * Les filtres sont initialisés depuis l'URL.
+   * Récupération du filtre Affaire depuis l'URL.
    *
    * Exemple :
    *
-   * /?affaire=AFF-001&metier=Mecanique&date=2026-09-17
+   * /?affaire=AFF-001
    */
+
+  const initialAffaire =
+    searchParams.get("affaire") || "";
+
 
   const [
     filters,
     setFilters
   ] = useState(() => ({
-
-    affaire:
-      searchParams.get("affaire") || "",
+    affaire: initialAffaire,
 
     metier:
       searchParams.get("metier") || "",
 
     date:
       searchParams.get("date") || ""
-
   }));
+
+
+  /*
+   * Synchronisation des filtres avec l'URL.
+   *
+   * Cela permet de conserver les filtres
+   * lorsqu'on ouvre un détail métier.
+   */
+
+  useEffect(() => {
+    const params = {};
+
+    if (filters.affaire) {
+      params.affaire =
+        filters.affaire;
+    }
+
+    if (filters.metier) {
+      params.metier =
+        filters.metier;
+    }
+
+    if (filters.date) {
+      params.date =
+        filters.date;
+    }
+
+    setSearchParams(
+      params,
+      {
+        replace: true
+      }
+    );
+  }, [
+    filters,
+    setSearchParams
+  ]);
+
+
+  const s = useMemo(
+    () =>
+      synthese(
+        rows,
+        METIERS,
+        filters,
+        settings
+      ),
+    [
+      rows,
+      filters,
+      settings
+    ]
+  );
+
+
+  const t = s.total;
 
 
   /*
    * IMPORTANT :
    *
-   * Si l'URL change pendant la navigation,
-   * on resynchronise les filtres React.
+   * On utilise partout "affaires".
+   * Cela évite l'erreur :
    *
-   * Cela évite qu'un ancien état local
-   * écrase le filtre présent dans l'URL.
+   * ReferenceError: affaires is not defined
    */
 
-  useEffect(() => {
-
-    const urlFilters = {
-
-      affaire:
-        searchParams.get("affaire") || "",
-
-      metier:
-        searchParams.get("metier") || "",
-
-      date:
-        searchParams.get("date") || ""
-
-    };
-
-
-    setFilters(current => {
-
-      if (
-        current.affaire ===
-          urlFilters.affaire &&
-        current.metier ===
-          urlFilters.metier &&
-        current.date ===
-          urlFilters.date
-      ) {
-
-        return current;
-
-      }
-
-
-      return urlFilters;
-
-    });
-
-  }, [searchParams]);
-
-
-  /*
-   * Synchronisation permanente
-   * filtres -> URL.
-   */
-
-  useEffect(() => {
-
-    const params = {};
-
-
-    if (filters.affaire) {
-
-      params.affaire =
-        filters.affaire;
-
-    }
-
-
-    if (filters.metier) {
-
-      params.metier =
-        filters.metier;
-
-    }
-
-
-    if (filters.date) {
-
-      params.date =
-        filters.date;
-
-    }
-
-
-    const currentString =
-      searchParams.toString();
-
-    const nextString =
-      new URLSearchParams(
-        params
-      ).toString();
-
-
-    if (
-      currentString !==
-      nextString
-    ) {
-
-      setSearchParams(
-        params,
-        {
-          replace: true
-        }
-      );
-
-    }
-
-  }, [
-    filters,
-    searchParams,
-    setSearchParams
-  ]);
-
-
-  const s =
-    useMemo(
-      () =>
-        synthese(
-          rows,
-          METIERS,
-          filters,
-          settings
-        ),
-      [
-        rows,
-        filters,
-        settings
-      ]
-    );
-
-
-  const t =
-    s.total;
-
-
-  const affairs =
+  const affaires =
     distinct(
       rows,
       "affaire"
@@ -567,26 +403,51 @@ function Dashboard() {
     );
 
 
+  /* =======================================================
+     EXPORT PDF
+     ======================================================= */
+
+  const handleExportPDF = () => {
+    try {
+      exportPDF(
+        s.lignes,
+        t,
+        {
+          date:
+            settings.dateAnalyse,
+
+          affaires
+        }
+      );
+    } catch (error) {
+      console.error(
+        "Erreur génération PDF :",
+        error
+      );
+
+      alert(
+        "Impossible de générer le PDF. Consultez la console pour plus de détails."
+      );
+    }
+  };
+
+
   return (
-
     <>
-
       <Header
-
         title="Dashboard de pilotage"
 
         subtitle={
           `Consommation des heures par métier · ` +
-          `${affairs} affaire${
-            affairs > 1
-              ? "s"
-              : ""
-          }`
+          `${affaires} affaire${affaires > 1 ? "s" : ""}`
         }
 
         actions={
-
           <>
+
+            {/* ==============================
+                EXPORT EXCEL
+               ============================== */}
 
             <button
               className="btn"
@@ -597,15 +458,17 @@ function Dashboard() {
                 )
               }
             >
-
               <FileSpreadsheet
                 size={15}
               />
 
               Excel
-
             </button>
 
+
+            {/* ==============================
+                EXPORT CSV
+               ============================== */}
 
             <button
               className="btn"
@@ -616,50 +479,33 @@ function Dashboard() {
                 )
               }
             >
-
               <Download
                 size={15}
               />
 
               CSV
-
             </button>
 
 
+            {/* ==============================
+                EXPORT PDF
+               ============================== */}
+
             <button
               className="btn"
-              onClick={() =>
-                exportPDF(
-                  s.lignes,
-                  t,
-                  {
-                    date:
-                      settings.dateAnalyse,
-
-                    affaires,
-
-                    affaire:
-                      filters.affaire || "Toutes",
-
-                    metier:
-                      filters.metier || "Tous"
-                  }
-                )
+              onClick={
+                handleExportPDF
               }
             >
-
               <FileText
                 size={15}
               />
 
               PDF
-
             </button>
 
           </>
-
         }
-
       />
 
 
@@ -669,6 +515,10 @@ function Dashboard() {
         setFilters={setFilters}
       />
 
+
+      {/* =================================================
+          KPI
+         ================================================= */}
 
       <div className="kpis">
 
@@ -755,6 +605,10 @@ function Dashboard() {
       </div>
 
 
+      {/* =================================================
+          TABLEAU
+         ================================================= */}
+
       <Table
         lignes={s.lignes}
         total={t}
@@ -762,8 +616,11 @@ function Dashboard() {
       />
 
 
-      <div className="grid2">
+      {/* =================================================
+          GRAPHIQUES
+         ================================================= */}
 
+      <div className="grid2">
 
         {/* =================================================
             HISTOGRAMME 1
@@ -775,11 +632,8 @@ function Dashboard() {
         >
 
           <MetiersBarChart
-
             data={s.lignes}
-
             bars={[
-
               {
                 dataKey:
                   "budgetAlloue",
@@ -801,9 +655,7 @@ function Dashboard() {
                 fill:
                   "#2563eb"
               }
-
             ]}
-
           />
 
         </Card>
@@ -820,11 +672,8 @@ function Dashboard() {
         >
 
           <MetiersBarChart
-
             data={s.lignes}
-
             bars={[
-
               {
                 dataKey:
                   "budgetDate",
@@ -846,9 +695,7 @@ function Dashboard() {
                 fill:
                   "#0891b2"
               }
-
             ]}
-
           />
 
         </Card>
@@ -864,13 +711,9 @@ function Dashboard() {
         >
 
           <MetiersBarChart
-
             data={s.lignes}
-
             yAxisUnit="%"
-
             bars={[
-
               {
                 dataKey:
                   "consoReelle",
@@ -892,9 +735,7 @@ function Dashboard() {
                 fill:
                   "#cbd5e1"
               }
-
             ]}
-
           />
 
         </Card>
@@ -911,43 +752,33 @@ function Dashboard() {
 
           <ResponsiveContainer
             width="100%"
-            height={320}
+            height={300}
           >
 
             <PieChart>
 
               <Pie
-
                 data={pieData}
-
                 dataKey="encouru"
-
                 nameKey="metier"
-
                 innerRadius={60}
-
-                outerRadius={105}
-
+                outerRadius={100}
                 paddingAngle={2}
-
               >
 
                 {pieData.map(
                   (x, index) => (
 
                     <Cell
-
                       key={
                         `${x.metier}-${index}`
                       }
 
                       fill={
-                        COLORS[
-                          x.metier
-                        ] ||
+                        COLORS[x.metier] ||
+                        COLORS.default ||
                         "#64748b"
                       }
-
                     />
 
                   )
@@ -958,7 +789,6 @@ function Dashboard() {
 
               <Tooltip />
 
-
               <Legend />
 
             </PieChart>
@@ -968,11 +798,8 @@ function Dashboard() {
         </Card>
 
       </div>
-
     </>
-
   );
-
 }
 
 
@@ -981,28 +808,23 @@ function Dashboard() {
    ========================================================= */
 
 function Login() {
-
   const nav =
     useNavigate();
-
 
   const [
     email,
     setEmail
   ] = useState("");
 
-
   const [
     password,
     setPassword
   ] = useState("");
 
-
   const [
     busy,
     setBusy
   ] = useState(false);
-
 
   const [
     error,
@@ -1018,7 +840,6 @@ function Login() {
       setBusy(true);
       setError("");
 
-
       try {
 
         await signIn(
@@ -1026,10 +847,7 @@ function Login() {
           password
         );
 
-
-        nav(
-          "/imports"
-        );
+        nav("/imports");
 
       } catch (err) {
 
@@ -1037,7 +855,6 @@ function Login() {
           "Erreur connexion :",
           err
         );
-
 
         setError(
           "E-mail ou mot de passe incorrect."
@@ -1048,23 +865,18 @@ function Login() {
         setBusy(false);
 
       }
-
     };
 
 
   return (
-
     <div className="loginpage">
 
       <Card
-
         title="Administration PilotageH"
-
         subtitle={
           "Connectez-vous pour accéder " +
           "aux fonctions d'administration."
         }
-
       >
 
         <form
@@ -1073,7 +885,6 @@ function Login() {
         >
 
           <label>
-
             Adresse e-mail
 
             <input
@@ -1087,12 +898,10 @@ function Login() {
               placeholder="votre@email.fr"
               required
             />
-
           </label>
 
 
           <label>
-
             Mot de passe
 
             <input
@@ -1106,18 +915,13 @@ function Login() {
               placeholder="••••••••"
               required
             />
-
           </label>
 
 
           {error && (
-
             <div className="notice danger">
-
               {error}
-
             </div>
-
           )}
 
 
@@ -1126,11 +930,9 @@ function Login() {
             type="submit"
             disabled={busy}
           >
-
             {busy
               ? "Connexion…"
               : "Se connecter"}
-
           </button>
 
 
@@ -1141,13 +943,11 @@ function Login() {
               nav("/")
             }
           >
-
             <ArrowLeft
               size={15}
             />
 
             Retour au dashboard
-
           </button>
 
         </form>
@@ -1155,9 +955,7 @@ function Login() {
       </Card>
 
     </div>
-
   );
-
 }
 
 
@@ -1168,10 +966,8 @@ function Login() {
 function ProtectedRoute({
   children
 }) {
-
   const nav =
     useNavigate();
-
 
   const [
     session,
@@ -1188,9 +984,7 @@ function ProtectedRoute({
       .then(s => {
 
         if (mounted) {
-
           setSession(s);
-
         }
 
       })
@@ -1201,11 +995,8 @@ function ProtectedRoute({
           error
         );
 
-
         if (mounted) {
-
           setSession(null);
-
         }
 
       });
@@ -1216,9 +1007,7 @@ function ProtectedRoute({
         s => {
 
           if (mounted) {
-
             setSession(s);
-
           }
 
         }
@@ -1229,10 +1018,8 @@ function ProtectedRoute({
 
       mounted = false;
 
-
       if (
-        authSubscription
-          ?.data
+        authSubscription?.data
           ?.subscription
           ?.unsubscribe
       ) {
@@ -1254,13 +1041,9 @@ function ProtectedRoute({
   ) {
 
     return (
-
       <div className="empty">
-
         Vérification de la connexion…
-
       </div>
-
     );
 
   }
@@ -1269,18 +1052,15 @@ function ProtectedRoute({
   if (!session) {
 
     return (
-
       <LoginRedirect
         nav={nav}
       />
-
     );
 
   }
 
 
   return children;
-
 }
 
 
@@ -1305,15 +1085,10 @@ function LoginRedirect({
 
 
   return (
-
     <div className="empty">
-
       Redirection vers la connexion…
-
     </div>
-
   );
-
 }
 
 
@@ -1322,29 +1097,24 @@ function LoginRedirect({
    ========================================================= */
 
 function Imports() {
-
   const {
     rows
   } = useData();
-
 
   const [
     preview,
     setPreview
   ] = useState(null);
 
-
   const [
     busy,
     setBusy
   ] = useState(false);
 
-
   const [
     msg,
     setMsg
   ] = useState("");
-
 
   const [
     msgType,
@@ -1358,13 +1128,7 @@ function Imports() {
       const file =
         e.target.files?.[0];
 
-
-      if (!file) {
-
-        return;
-
-      }
-
+      if (!file) return;
 
       setBusy(true);
       setMsg("");
@@ -1378,7 +1142,6 @@ function Imports() {
             file
           );
 
-
         setPreview(
           result
         );
@@ -1390,12 +1153,10 @@ function Imports() {
           err
         );
 
-
         setMsg(
           "Erreur de lecture : " +
           err.message
         );
-
 
         setMsgType(
           "danger"
@@ -1408,18 +1169,13 @@ function Imports() {
         e.target.value = "";
 
       }
-
     };
 
 
   const validate =
     async () => {
 
-      if (!preview) {
-
-        return;
-
-      }
+      if (!preview) return;
 
 
       if (
@@ -1430,14 +1186,11 @@ function Imports() {
           "Impossible d'importer : certaines colonnes obligatoires sont manquantes."
         );
 
-
         setMsgType(
           "danger"
         );
 
-
         return;
-
       }
 
 
@@ -1449,14 +1202,11 @@ function Imports() {
           "Aucune ligne valide à importer."
         );
 
-
         setMsgType(
           "danger"
         );
 
-
         return;
-
       }
 
 
@@ -1492,12 +1242,10 @@ function Imports() {
           err
         );
 
-
         setMsg(
           "Erreur lors de l'import : " +
           err.message
         );
-
 
         setMsgType(
           "danger"
@@ -1508,33 +1256,24 @@ function Imports() {
         setBusy(false);
 
       }
-
     };
 
 
   return (
-
     <>
-
       <Header
-
         title="Données / Import"
-
         subtitle={
           "Un seul fichier Excel alimente " +
           "désormais toute l'application."
         }
 
         actions={
-
           <button
-
             className="btn"
-
             onClick={
               downloadTemplate
             }
-
           >
 
             <FileSpreadsheet
@@ -1544,9 +1283,7 @@ function Imports() {
             Télécharger le modèle Excel
 
           </button>
-
         }
-
       />
 
 
@@ -1584,13 +1321,10 @@ function Imports() {
 
 
       <Card
-
         title="Importer le fichier d'alimentation"
-
         subtitle={
           "Les colonnes sont reconnues automatiquement."
         }
-
       >
 
         <label className="drop">
@@ -1600,11 +1334,9 @@ function Imports() {
           />
 
           <b>
-
             {busy
               ? "Traitement du fichier…"
               : "Cliquez pour sélectionner votre Excel"}
-
           </b>
 
           <small>
@@ -1627,9 +1359,7 @@ function Imports() {
               `notice ${msgType}`
             }
           >
-
             {msg}
-
           </div>
 
         )}
@@ -1644,12 +1374,10 @@ function Imports() {
               <div>
 
                 <b>
-
                   {preview.valid.length}
                   {" "}ligne(s) valide(s)
                   {" / "}
                   {preview.rows.length}
-
                 </b>
 
 
@@ -1695,26 +1423,20 @@ function Imports() {
                     setPreview(null)
                   }
                 >
-
                   Annuler
-
                 </button>
 
 
                 <button
-
                   className="btn primary"
-
                   disabled={
                     busy ||
                     preview.valid.length === 0 ||
                     preview.missing.length > 0
                   }
-
                   onClick={
                     validate
                   }
-
                 >
 
                   <CheckCircle2
@@ -1739,31 +1461,12 @@ function Imports() {
                 <thead>
 
                   <tr>
-
-                    <th>
-                      Affaire
-                    </th>
-
-                    <th>
-                      Métier
-                    </th>
-
-                    <th>
-                      Consommé
-                    </th>
-
-                    <th>
-                      Budget date
-                    </th>
-
-                    <th>
-                      Budget alloué
-                    </th>
-
-                    <th>
-                      Date
-                    </th>
-
+                    <th>Affaire</th>
+                    <th>Métier</th>
+                    <th>Consommé</th>
+                    <th>Budget date</th>
+                    <th>Budget alloué</th>
+                    <th>Date</th>
                   </tr>
 
                 </thead>
@@ -1828,7 +1531,9 @@ function Imports() {
 
           <div className="bigstat">
 
-            {fmt(rows.length)}
+            {fmt(
+              rows.length
+            )}
 
             {" "}
 
@@ -1840,10 +1545,8 @@ function Imports() {
 
 
           <p className="muted">
-
             Les données sont centralisées
             dans Supabase.
-
           </p>
 
         </Card>
@@ -1854,66 +1557,57 @@ function Imports() {
         >
 
           <p className="muted">
-
             Cette action supprime toutes
             les données actuellement chargées.
-
           </p>
 
 
           <button
-
             className="btn dangerbtn"
+            onClick={
+              async () => {
 
-            onClick={async () => {
-
-              if (
-                !window.confirm(
-                  "Supprimer toutes les données ?"
-                )
-              ) {
-
-                return;
-
-              }
+                if (
+                  !window.confirm(
+                    "Supprimer toutes les données ?"
+                  )
+                ) {
+                  return;
+                }
 
 
-              try {
+                try {
 
-                await resetData();
+                  await resetData();
 
+                  setMsg(
+                    "Données supprimées."
+                  );
 
-                setMsg(
-                  "Données supprimées."
-                );
+                  setMsgType(
+                    "success"
+                  );
 
+                } catch (err) {
 
-                setMsgType(
-                  "success"
-                );
+                  console.error(
+                    "Erreur suppression :",
+                    err
+                  );
 
-              } catch (err) {
+                  setMsg(
+                    "Erreur suppression : " +
+                    err.message
+                  );
 
-                console.error(
-                  "Erreur suppression :",
-                  err
-                );
+                  setMsgType(
+                    "danger"
+                  );
 
-
-                setMsg(
-                  "Erreur suppression : " +
-                  err.message
-                );
-
-
-                setMsgType(
-                  "danger"
-                );
+                }
 
               }
-
-            }}
-
+            }
           >
 
             <Trash2
@@ -1927,11 +1621,8 @@ function Imports() {
         </Card>
 
       </div>
-
     </>
-
   );
-
 }
 
 
@@ -1940,7 +1631,6 @@ function Imports() {
    ========================================================= */
 
 function Analyse() {
-
   const {
     rows,
     settings
@@ -1959,27 +1649,21 @@ function Analyse() {
   ] = useState("Tous");
 
 
-  const s =
-    useMemo(
-      () =>
-        synthese(
-          rows,
-          METIERS,
-          filters,
-          settings
-        ),
-      [
+  const s = useMemo(
+    () =>
+      synthese(
         rows,
+        METIERS,
         filters,
         settings
-      ]
-    );
+      ),
+    [
+      rows,
+      filters,
+      settings
+    ]
+  );
 
-
-  /*
-   * Si un métier a disparu après import,
-   * on revient automatiquement sur Tous.
-   */
 
   useEffect(() => {
 
@@ -2007,18 +1691,14 @@ function Analyse() {
       ? s.filtered
       : s.filtered.filter(
           x =>
-            x.metier ===
-            metier
+            x.metier === metier
         );
 
 
   const dates = [
     ...new Set(
       rs
-        .map(
-          x =>
-            x.date
-        )
+        .map(x => x.date)
         .filter(Boolean)
     )
   ].sort();
@@ -2031,45 +1711,35 @@ function Analyse() {
     dates.map(
       date => {
 
-        cumul +=
-          rs
-            .filter(
-              x =>
-                x.date ===
-                date
-            )
-            .reduce(
-              (a, x) =>
-                a +
-                x.encouru,
-              0
-            );
+        cumul += rs
+          .filter(
+            x =>
+              x.date === date
+          )
+          .reduce(
+            (a, x) =>
+              a + x.encouru,
+            0
+          );
 
 
         const budgetDate =
           rs
             .filter(
               x =>
-                x.date ===
-                date
+                x.date === date
             )
             .reduce(
               (a, x) =>
-                a +
-                x.budgetDate,
+                a + x.budgetDate,
               0
             );
 
 
         return {
-
           date,
-
-          encouru:
-            cumul,
-
+          encouru: cumul,
           budgetDate
-
         };
 
       }
@@ -2077,29 +1747,20 @@ function Analyse() {
 
 
   return (
-
     <>
-
       <Header
-
         title="Analyse"
-
         subtitle={
           "Analyse des écarts et évolution " +
           "des données importées"
         }
-
       />
 
 
       <Filters
-
         rows={rows}
-
         filters={filters}
-
         setFilters={setFilters}
-
       />
 
 
@@ -2111,15 +1772,12 @@ function Analyse() {
 
 
         <select
-
           value={metier}
-
           onChange={e =>
             setMetier(
               e.target.value
             )
           }
-
         >
 
           <option value="Tous">
@@ -2134,9 +1792,7 @@ function Analyse() {
                 key={m}
                 value={m}
               >
-
                 {m}
-
               </option>
 
             )
@@ -2148,7 +1804,6 @@ function Analyse() {
 
 
       <Card
-
         title={
           `Évolution temporelle — ${metier}`
         }
@@ -2157,7 +1812,6 @@ function Analyse() {
           "Disponible si la colonne Date est présente " +
           "dans le fichier d'alimentation."
         }
-
       >
 
         {serie.length > 0 ? (
@@ -2175,59 +1829,40 @@ function Analyse() {
                 strokeDasharray="3 3"
               />
 
-
               <XAxis
                 dataKey="date"
               />
 
-
               <YAxis />
 
-
               <Tooltip />
-
 
               <Legend />
 
 
               <ReferenceLine
-
                 x={
                   settings.dateAnalyse
                 }
-
                 stroke="#94a3b8"
-
                 strokeDasharray="4 4"
-
               />
 
 
               <Line
-
                 dataKey="encouru"
-
                 name="Consommé cumulé"
-
                 stroke="#2563eb"
-
                 strokeWidth={2.5}
-
               />
 
 
               <Line
-
                 dataKey="budgetDate"
-
                 name="Budget à date"
-
                 stroke="#ea580c"
-
                 strokeWidth={2}
-
                 strokeDasharray="5 4"
-
               />
 
             </LineChart>
@@ -2237,10 +1872,8 @@ function Analyse() {
         ) : (
 
           <div className="empty">
-
             Aucune date exploitable
             dans les données importées.
-
           </div>
 
         )}
@@ -2255,11 +1888,8 @@ function Analyse() {
         >
 
           <MetiersBarChart
-
             data={s.lignes}
-
             bars={[
-
               {
                 dataKey:
                   "ecartH",
@@ -2270,9 +1900,7 @@ function Analyse() {
                 fill:
                   "#0891b2"
               }
-
             ]}
-
           />
 
         </Card>
@@ -2283,11 +1911,8 @@ function Analyse() {
         >
 
           <MetiersBarChart
-
             data={s.lignes}
-
             bars={[
-
               {
                 dataKey:
                   "ecartPoints",
@@ -2298,19 +1923,14 @@ function Analyse() {
                 fill:
                   "#7c3aed"
               }
-
             ]}
-
           />
 
         </Card>
 
       </div>
-
     </>
-
   );
-
 }
 
 
@@ -2319,7 +1939,6 @@ function Analyse() {
    ========================================================= */
 
 function Detail() {
-
   const {
     nom
   } = useParams();
@@ -2347,18 +1966,8 @@ function Detail() {
 
 
   /*
-   * IMPORTANT :
-   *
-   * On récupère TOUS les filtres présents
-   * dans l'URL du Dashboard.
-   *
-   * Cela permet de conserver :
-   *
-   * - Affaire
-   * - Métier
-   * - Date
-   *
-   * lors du retour.
+   * Récupération du filtre Affaire
+   * transmis depuis le Dashboard.
    */
 
   const affaire =
@@ -2367,157 +1976,97 @@ function Detail() {
     ) || "";
 
 
-  const date =
-    searchParams.get(
-      "date"
-    ) || "";
-
-
-  /*
-   * Pour le détail, le métier affiché
-   * reste celui de l'URL /metier/:nom.
-   *
-   * On ne remplace donc pas le filtre
-   * métier du Dashboard par hasard.
-   */
-
-  const s =
-    useMemo(
-      () =>
-        synthese(
-          rows,
-          METIERS,
-          {
-            metier,
-            affaire,
-            date
-          },
-          settings
-        ),
-      [
+  const s = useMemo(
+    () =>
+      synthese(
         rows,
-        metier,
-        affaire,
-        date,
+        METIERS,
+        {
+          metier,
+          affaire
+        },
         settings
-      ]
-    );
+      ),
+    [
+      rows,
+      metier,
+      affaire,
+      settings
+    ]
+  );
 
 
   const r =
     s.lignes.find(
       x =>
-        x.metier ===
-        metier
+        x.metier === metier
     );
 
 
   if (!r) {
 
     return (
-
       <div className="empty">
-
         Métier introuvable.
-
       </div>
-
     );
 
   }
 
 
   /*
-   * RETOUR DASHBOARD
+   * Retour au Dashboard.
    *
-   * On reconstruit l'URL avec
-   * tous les filtres d'origine.
+   * Le filtre Affaire est conservé.
    */
 
   const handleBack = () => {
 
-    const params =
-      new URLSearchParams();
+    const params = {};
 
 
     if (affaire) {
 
-      params.set(
-        "affaire",
-        affaire
-      );
+      params.affaire =
+        affaire;
 
     }
-
-
-    /*
-     * Le filtre métier du Dashboard
-     * ne doit pas être forcé à celui
-     * de la page détail.
-     *
-     * Il n'est donc volontairement
-     * pas ajouté ici.
-     */
-
-
-    if (date) {
-
-      params.set(
-        "date",
-        date
-      );
-
-    }
-
-
-    const query =
-      params.toString();
 
 
     nav(
-      query
-        ? `/?${query}`
-        : "/"
+      `/?${new URLSearchParams(
+        params
+      ).toString()}`
     );
 
   };
 
 
   return (
-
     <>
-
       <Header
 
-        title={metier}
+        title={
+          metier
+        }
 
         subtitle={
-
           `Détail du métier · analyse au ` +
           `${settings.dateAnalyse}` +
-
           (
-
             affaire
-
               ? ` · Affaire : ${affaire}`
-
               : ""
-
           )
-
         }
 
         actions={
 
           <button
-
             className="btn"
-
             onClick={
               handleBack
             }
-
           >
 
             <ArrowLeft
@@ -2547,106 +2096,72 @@ function Detail() {
       <div className="kpis">
 
         <KPI
-
           label="Budget alloué"
-
           value={fmt(
             r.budgetAlloue
           )}
-
           unit="h"
-
         />
 
 
         <KPI
-
           label="Consommé"
-
           value={fmt(
             r.encouru
           )}
-
           unit="h"
-
           kind="blue"
-
         />
 
 
         <KPI
-
           label="Budget à date"
-
           value={fmt(
             r.budgetDate
           )}
-
           unit="h"
-
           kind="green"
-
         />
 
 
         <KPI
-
           label="Écart"
-
           value={sign(
             r.ecartH
           )}
-
           unit="h"
-
           kind={
             r.ecartH > 0
               ? "red"
               : "green"
           }
-
         />
 
 
         <KPI
-
           label="Conso réelle"
-
           value={fmt1(
             r.consoReelle
           )}
-
           unit="%"
-
         />
 
 
         <KPI
-
           label="Écart points"
-
           value={sign(
             r.ecartPoints
           )}
-
           unit="pts"
-
           kind={
-
             r.ecartPoints >
             settings.orange
-
               ? "red"
-
               : r.ecartPoints >
                 settings.green
-
                 ? "amber"
-
                 : "green"
-
           }
-
         />
 
       </div>
@@ -2654,13 +2169,11 @@ function Detail() {
 
       <div className="grid2">
 
-
         <Card
           title="Jauge de consommation"
         >
 
           <Gauge
-
             value={
               r.consoReelle
             }
@@ -2671,7 +2184,6 @@ function Detail() {
               ] ||
               "#64748b"
             }
-
           />
 
 
@@ -2685,9 +2197,7 @@ function Detail() {
 
 
           <div className="muted center">
-
             du budget alloué consommé
-
           </div>
 
         </Card>
@@ -2698,7 +2208,6 @@ function Detail() {
         >
 
           <div
-
             className={
               `analysis ${
                 r.ecartH > 0
@@ -2706,7 +2215,6 @@ function Detail() {
                   : "goodbox"
               }`
             }
-
           >
 
             <b>
@@ -2715,18 +2223,14 @@ function Detail() {
                 Math.abs(
                   r.ecartH
                 )
-              )}
-
-              {" "}
+              )}{" "}
               h
 
             </b>
 
 
             {r.ecartH > 0
-
               ? " consommées au-dessus du budget à date."
-
               : " de moins que le budget à date."}
 
           </div>
@@ -2738,21 +2242,17 @@ function Detail() {
             est de{" "}
 
             <b>
-
               {pct(
                 r.consoReelle
               )}
-
             </b>
 
             {" "}contre{" "}
 
             <b>
-
               {pct(
                 r.consoDate
               )}
-
             </b>
 
             {" "}du budget alloué
@@ -2760,11 +2260,9 @@ function Detail() {
             soit{" "}
 
             <b>
-
               {sign(
                 r.ecartPoints
               )} points
-
             </b>.
 
           </p>
@@ -2777,11 +2275,9 @@ function Detail() {
               Budget alloué
 
               <b>
-
                 {fmt(
                   r.budgetAlloue
                 )} h
-
               </b>
 
             </span>
@@ -2792,11 +2288,9 @@ function Detail() {
               Budget à date
 
               <b>
-
                 {fmt(
                   r.budgetDate
                 )} h
-
               </b>
 
             </span>
@@ -2807,11 +2301,9 @@ function Detail() {
               Consommé
 
               <b>
-
                 {fmt(
                   r.encouru
                 )} h
-
               </b>
 
             </span>
@@ -2822,11 +2314,9 @@ function Detail() {
               Reste
 
               <b>
-
                 {fmt(
                   r.reste
                 )} h
-
               </b>
 
             </span>
@@ -2836,11 +2326,8 @@ function Detail() {
         </Card>
 
       </div>
-
     </>
-
   );
-
 }
 
 
@@ -2870,64 +2357,38 @@ function Gauge({
 
 
   return (
-
     <svg
-
       className="gauge"
-
       viewBox="0 0 180 100"
-
     >
 
       <path
-
-        d="
-          M10 90
-          A80 80 0 0 1 170 90
-        "
-
+        d="M10 90 A80 80 0 0 1 170 90"
         fill="none"
-
         stroke="#e2e8f0"
-
         strokeWidth="14"
-
         strokeLinecap="round"
-
       />
 
 
       <path
-
-        d="
-          M10 90
-          A80 80 0 0 1 170 90
-        "
-
+        d="M10 90 A80 80 0 0 1 170 90"
         fill="none"
-
         stroke={
           color ||
           "#64748b"
         }
-
         strokeWidth="14"
-
         strokeLinecap="round"
-
         strokeDasharray={
           `${v / 100 * 251} 251`
         }
-
       />
 
 
       <line
-
         x1="90"
-
         y1="90"
-
         x2={
           90 +
           65 *
@@ -2937,7 +2398,6 @@ function Gauge({
             180
           )
         }
-
         y2={
           90 +
           65 *
@@ -2947,30 +2407,20 @@ function Gauge({
             180
           )
         }
-
         stroke="#334155"
-
         strokeWidth="2.5"
-
       />
 
 
       <circle
-
         cx="90"
-
         cy="90"
-
         r="4"
-
         fill="#334155"
-
       />
 
     </svg>
-
   );
-
 }
 
 
@@ -2979,7 +2429,6 @@ function Gauge({
    ========================================================= */
 
 function Parametres() {
-
   const {
     settings
   } = useData();
@@ -2988,9 +2437,7 @@ function Parametres() {
   const [
     s,
     setS
-  ] = useState(
-    settings
-  );
+  ] = useState(settings);
 
 
   useEffect(() => {
@@ -3051,38 +2498,28 @@ function Parametres() {
           "Le seuil vert doit être inférieur ou égal au seuil orange."
         );
 
-
         return;
 
       }
 
 
       saveSettings({
-
         ...s,
-
         green,
-
         orange
-
       });
 
     };
 
 
   return (
-
     <>
-
       <Header
-
         title="Paramètres"
-
         subtitle={
           "Seuils de statut et paramètres " +
           "du pilotage"
         }
-
       />
 
 
@@ -3092,34 +2529,25 @@ function Parametres() {
 
         <div className="formgrid">
 
-
           <label>
 
             Seuil vert (≤)
 
             <input
-
               type="number"
-
               step=".5"
-
               value={
                 s.green
               }
-
               onChange={e =>
                 setS({
-
                   ...s,
-
                   green:
                     Number(
                       e.target.value
                     )
-
                 })
               }
-
             />
 
             <small>
@@ -3134,28 +2562,20 @@ function Parametres() {
             Seuil orange (≤)
 
             <input
-
               type="number"
-
               step=".5"
-
               value={
                 s.orange
               }
-
               onChange={e =>
                 setS({
-
                   ...s,
-
                   orange:
                     Number(
                       e.target.value
                     )
-
                 })
               }
-
             />
 
             <small>
@@ -3170,30 +2590,21 @@ function Parametres() {
             Date d'analyse par défaut
 
             <input
-
               type="date"
-
               value={
                 s.dateAnalyse
               }
-
               onChange={e =>
                 setS({
-
                   ...s,
-
                   dateAnalyse:
                     e.target.value
-
                 })
               }
-
             />
 
             <small>
-
               Conservée avec l'application
-
             </small>
 
           </label>
@@ -3202,13 +2613,10 @@ function Parametres() {
 
 
         <button
-
           className="btn primary"
-
           onClick={
             handleSave
           }
-
         >
 
           <Save
@@ -3236,13 +2644,12 @@ function Parametres() {
               >
 
                 <i
-
                   style={{
                     background:
                       COLORS[m] ||
+                      COLORS.default ||
                       "#64748b"
                   }}
-
                 />
 
                 {i + 1}. {m}
@@ -3276,7 +2683,6 @@ function Parametres() {
 
         <div className="formules">
 
-
           <div>
 
             <b>
@@ -3284,10 +2690,8 @@ function Parametres() {
             </b>
 
             <code>
-
               Heures consommées /
               Budget alloué × 100
-
             </code>
 
           </div>
@@ -3300,10 +2704,8 @@ function Parametres() {
             </b>
 
             <code>
-
               Budget à date /
               Budget alloué × 100
-
             </code>
 
           </div>
@@ -3316,10 +2718,8 @@ function Parametres() {
             </b>
 
             <code>
-
               Heures consommées −
               Budget à date
-
             </code>
 
           </div>
@@ -3332,10 +2732,8 @@ function Parametres() {
             </b>
 
             <code>
-
               Consommation réelle −
               Consommation à date
-
             </code>
 
           </div>
@@ -3348,10 +2746,8 @@ function Parametres() {
             </b>
 
             <code>
-
               Budget alloué −
               Heures consommées
-
             </code>
 
           </div>
@@ -3359,11 +2755,8 @@ function Parametres() {
         </div>
 
       </Card>
-
     </>
-
   );
-
 }
 
 
@@ -3374,106 +2767,71 @@ function Parametres() {
 export default function App() {
 
   return (
-
     <BrowserRouter>
 
       <Layout>
 
         <Routes>
 
-
           <Route
-
             path="/"
-
             element={
               <Dashboard />
             }
-
           />
 
 
           <Route
-
             path="/analyse"
-
             element={
               <Analyse />
             }
-
           />
 
 
           <Route
-
             path="/metier/:nom"
-
             element={
               <Detail />
             }
-
           />
 
 
           <Route
-
             path="/login"
-
             element={
               <Login />
             }
-
           />
 
 
           <Route
-
             path="/imports"
-
             element={
-
               <ProtectedRoute>
-
                 <Imports />
-
               </ProtectedRoute>
-
             }
-
           />
 
 
           <Route
-
             path="/parametres"
-
             element={
-
               <ProtectedRoute>
-
                 <Parametres />
-
               </ProtectedRoute>
-
             }
-
           />
 
 
           <Route
-
             path="*"
-
             element={
-
               <div className="empty">
-
                 Page introuvable.
-
               </div>
-
             }
-
           />
 
         </Routes>
@@ -3481,7 +2839,5 @@ export default function App() {
       </Layout>
 
     </BrowserRouter>
-
   );
-
 }
