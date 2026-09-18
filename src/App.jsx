@@ -100,7 +100,6 @@ function useData() {
 
         if (!mounted) return;
 
-        // Synchronisation des métiers avec les données
         syncMetiers(data);
 
         setRows(data);
@@ -360,6 +359,7 @@ function Dashboard() {
       <Table
         lignes={s.lignes}
         total={t}
+        affaire={filters.affaire || ""}
       />
 
       <div className="grid2">
@@ -1570,7 +1570,8 @@ function Analyse() {
 
 function Detail() {
   const {
-    nom
+    nom,
+    affaire
   } = useParams();
 
   const metier =
@@ -1584,18 +1585,39 @@ function Detail() {
     settings
   } = useData();
 
+  /*
+   * Le filtre Affaire vient directement de l'URL.
+   * Il a été transmis depuis le Dashboard au clic sur "Voir".
+   *
+   * Aucun nouveau filtre n'est ajouté sur cette page.
+   */
+  const filters = useMemo(
+    () => ({
+      metier,
+      ...(affaire
+        ? {
+            affaire:
+              decodeURIComponent(affaire)
+          }
+        : {})
+    }),
+    [
+      metier,
+      affaire
+    ]
+  );
 
   const s = useMemo(
     () =>
       synthese(
         rows,
         METIERS,
-        { metier },
+        filters,
         settings
       ),
     [
       rows,
-      metier,
+      filters,
       settings
     ]
   );
@@ -1622,8 +1644,13 @@ function Detail() {
       <Header
         title={metier}
         subtitle={
-          `Détail du métier · analyse au ` +
-          `${settings.dateAnalyse}`
+          `Détail du métier` +
+          `${
+            affaire
+              ? ` · Affaire : ${decodeURIComponent(affaire)}`
+              : ""
+          }` +
+          ` · analyse au ${settings.dateAnalyse}`
         }
         actions={
           <button
@@ -2254,6 +2281,13 @@ export default function App() {
 
           <Route
             path="/metier/:nom"
+            element={
+              <Detail />
+            }
+          />
+
+          <Route
+            path="/metier/:nom/:affaire"
             element={
               <Detail />
             }
