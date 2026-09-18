@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+
 import {
   BrowserRouter,
   Routes,
@@ -37,6 +38,8 @@ import {
   ArrowLeft
 } from "lucide-react";
 
+import { jsPDF } from "jspdf";
+
 import {
   Layout,
   Card,
@@ -73,7 +76,6 @@ import { readWorkbook } from "./importer";
 import {
   exportExcel,
   exportCSV,
-  exportPDF,
   downloadTemplate
 } from "./export";
 
@@ -85,43 +87,1370 @@ import {
 
 
 /* =========================================================
+   OUTILS PDF
+   ========================================================= */
+
+function pdfText(doc, text, x, y, options = {}) {
+  const {
+    size = 8,
+    color = [30, 41, 59],
+    bold = false,
+    align = "left"
+  } = options;
+
+  doc.setFont("helvetica", bold ? "bold" : "normal");
+  doc.setFontSize(size);
+  doc.setTextColor(...color);
+  doc.text(String(text ?? ""), x, y, {
+    align
+  });
+}
+
+
+function pdfRect(
+  doc,
+  x,
+  y,
+  w,
+  h,
+  fill,
+  radius = 0
+) {
+  doc.setFillColor(...fill);
+  doc.roundedRect(
+    x,
+    y,
+    w,
+    h,
+    radius,
+    radius,
+    "F"
+  );
+}
+
+
+function pdfLine(
+  doc,
+  x1,
+  y1,
+  x2,
+  y2,
+  color = [226, 232, 240],
+  width = 0.3
+) {
+  doc.setDrawColor(...color);
+  doc.setLineWidth(width);
+  doc.line(
+    x1,
+    y1,
+    x2,
+    y2
+  );
+}
+
+
+function hexToRgb(hex) {
+  const clean =
+    String(hex || "")
+      .replace("#", "");
+
+  if (clean.length !== 6) {
+    return [100, 116, 139];
+  }
+
+  return [
+    parseInt(clean.slice(0, 2), 16),
+    parseInt(clean.slice(2, 4), 16),
+    parseInt(clean.slice(4, 6), 16)
+  ];
+}
+
+
+/* =========================================================
+   PDF PROFESSIONNEL
+   ========================================================= */
+
+function exportProfessionalPDF(
+  lignes,
+  total,
+  meta = {}
+) {
+  const doc = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: "a4"
+  });
+
+  const PAGE_W = 297;
+  const PAGE_H = 210;
+
+  const M = 8;
+
+  const blue = [37, 99, 235];
+  const dark = [15, 23, 42];
+  const text = [30, 41, 59];
+  const muted = [100, 116, 139];
+  const border = [226, 232, 240];
+  const light = [248, 250, 252];
+  const green = [22, 163, 74];
+  const orange = [234, 88, 12];
+  const red = [220, 38, 38];
+
+  /* =======================================================
+     PAGE
+     ======================================================= */
+
+  doc.setFillColor(
+    248,
+    250,
+    252
+  );
+
+  doc.rect(
+    0,
+    0,
+    PAGE_W,
+    PAGE_H,
+    "F"
+  );
+
+
+  /* =======================================================
+     EN-TÊTE
+     ======================================================= */
+
+  doc.setFillColor(
+    ...blue
+  );
+
+  doc.rect(
+    0,
+    0,
+    PAGE_W,
+    20,
+    "F"
+  );
+
+  pdfText(
+    doc,
+    "PILOTAGE H",
+    M,
+    9,
+    {
+      size: 13,
+      color: [255, 255, 255],
+      bold: true
+    }
+  );
+
+  pdfText(
+    doc,
+    "RAPPORT DE PILOTAGE DES HEURES",
+    M,
+    15,
+    {
+      size: 7,
+      color: [219, 234, 254],
+      bold: true
+    }
+  );
+
+  pdfText(
+    doc,
+    meta.date || "—",
+    PAGE_W - M,
+    9,
+    {
+      size: 8,
+      color: [255, 255, 255],
+      bold: true,
+      align: "right"
+    }
+  );
+
+  pdfText(
+    doc,
+    meta.affaire
+      ? `Affaire : ${meta.affaire}`
+      : "Toutes les affaires",
+    PAGE_W - M,
+    15,
+    {
+      size: 7,
+      color: [219, 234, 254],
+      align: "right"
+    }
+  );
+
+
+  /* =======================================================
+     KPI
+     ======================================================= */
+
+  const kpiY = 24;
+  const kpiH = 18;
+  const gap = 3;
+
+  const kpiW =
+    (PAGE_W - 2 * M - 5 * gap) / 6;
+
+  const kpis = [
+    {
+      label: "BUDGET ALLOUÉ",
+      value: `${fmt(total.budgetAlloue)} h`,
+      color: [71, 85, 105]
+    },
+    {
+      label: "HEURES CONSOMMÉES",
+      value: `${fmt(total.encouru)} h`,
+      color: blue
+    },
+    {
+      label: "BUDGET À DATE",
+      value: `${fmt(total.budgetDate)} h`,
+      color: green
+    },
+    {
+      label: "ÉCART HEURES",
+      value: sign(total.ecartH),
+      color:
+        total.ecartH > 0
+          ? red
+          : green
+    },
+    {
+      label: "CONSOMMATION",
+      value: `${fmt1(total.consoReelle)} %`,
+      color: orange
+    },
+    {
+      label: "ÉCART THÉORIQUE",
+      value: `${sign(total.ecartPoints)} pts`,
+      color:
+        total.ecartPoints >
+        (meta.orange ?? 10)
+          ? red
+          : total.ecartPoints >
+            (meta.green ?? 5)
+            ? orange
+            : green
+    }
+  ];
+
+  kpis.forEach(
+    (kpi, index) => {
+      const x =
+        M +
+        index *
+          (kpiW + gap);
+
+      pdfRect(
+        doc,
+        x,
+        kpiY,
+        kpiW,
+        kpiH,
+        [255, 255, 255],
+        2
+      );
+
+      doc.setFillColor(
+        ...kpi.color
+      );
+
+      doc.roundedRect(
+        x,
+        kpiY,
+        1.5,
+        kpiH,
+        0.75,
+        0.75,
+        "F"
+      );
+
+      pdfText(
+        doc,
+        kpi.label,
+        x + 4,
+        kpiY + 6,
+        {
+          size: 5.5,
+          color: muted,
+          bold: true
+        }
+      );
+
+      pdfText(
+        doc,
+        kpi.value,
+        x + 4,
+        kpiY + 14,
+        {
+          size: 10,
+          color: dark,
+          bold: true
+        }
+      );
+    }
+  );
+
+
+  /* =======================================================
+     TITRE SECTION PRINCIPALE
+     ======================================================= */
+
+  pdfText(
+    doc,
+    "SYNTHÈSE PAR MÉTIER",
+    M,
+    48,
+    {
+      size: 8,
+      color: dark,
+      bold: true
+    }
+  );
+
+  pdfText(
+    doc,
+    `${lignes.length} métier(s) suivi(s)`,
+    PAGE_W - M,
+    48,
+    {
+      size: 6,
+      color: muted,
+      align: "right"
+    }
+  );
+
+
+  /* =======================================================
+     TABLEAU
+     ======================================================= */
+
+  const tableX = M;
+  const tableY = 51;
+  const tableW = 151;
+  const tableH = 74;
+
+  pdfRect(
+    doc,
+    tableX,
+    tableY,
+    tableW,
+    tableH,
+    [255, 255, 255],
+    2
+  );
+
+  const cols = [
+    {
+      label: "Métier",
+      width: 29
+    },
+    {
+      label: "Cons.",
+      width: 18
+    },
+    {
+      label: "B. date",
+      width: 18
+    },
+    {
+      label: "B. alloué",
+      width: 19
+    },
+    {
+      label: "Reste",
+      width: 18
+    },
+    {
+      label: "Conso.",
+      width: 17
+    },
+    {
+      label: "Écart h",
+      width: 17
+    },
+    {
+      label: "Écart pts",
+      width: 17
+    },
+    {
+      label: "Statut",
+      width: 18
+    }
+  ];
+
+  let cx = tableX;
+
+  doc.setFillColor(
+    241,
+    245,
+    249
+  );
+
+  doc.rect(
+    tableX,
+    tableY,
+    tableW,
+    7,
+    "F"
+  );
+
+  cols.forEach(
+    col => {
+      pdfText(
+        doc,
+        col.label,
+        cx + 1.5,
+        tableY + 4.7,
+        {
+          size: 4.5,
+          color: muted,
+          bold: true
+        }
+      );
+
+      cx += col.width;
+    }
+  );
+
+
+  const rowHeight =
+    lignes.length > 18
+      ? 3.15
+      : 3.55;
+
+  const maxRows =
+    Math.floor(
+      (tableH - 10) /
+        rowHeight
+    );
+
+  const displayRows =
+    lignes.slice(
+      0,
+      maxRows
+    );
+
+  displayRows.forEach(
+    (r, index) => {
+      const y =
+        tableY +
+        7 +
+        index *
+          rowHeight;
+
+      if (
+        index % 2 === 1
+      ) {
+        doc.setFillColor(
+          248,
+          250,
+          252
+        );
+
+        doc.rect(
+          tableX,
+          y,
+          tableW,
+          rowHeight,
+          "F"
+        );
+      }
+
+      let x =
+        tableX;
+
+      const values = [
+        r.metier,
+        fmt(r.encouru),
+        fmt(r.budgetDate),
+        fmt(r.budgetAlloue),
+        fmt(r.reste),
+        `${fmt1(r.consoReelle)}%`,
+        sign(r.ecartH),
+        `${sign(r.ecartPoints)}`,
+        r.statut
+      ];
+
+      values.forEach(
+        (value, colIndex) => {
+
+          let color =
+            text;
+
+          let bold =
+            colIndex === 0;
+
+          if (
+            colIndex === 8
+          ) {
+            color =
+              r.statut === "vert"
+                ? green
+                : r.statut ===
+                  "orange"
+                  ? orange
+                  : red;
+
+            bold = true;
+          }
+
+          pdfText(
+            doc,
+            String(value),
+            x + 1.5,
+            y + rowHeight - 1,
+            {
+              size:
+                colIndex === 0
+                  ? 4.2
+                  : 4.0,
+              color,
+              bold
+            }
+          );
+
+          x +=
+            cols[colIndex]
+              .width;
+        }
+      );
+    }
+  );
+
+
+  /* =======================================================
+     TOTAL
+     ======================================================= */
+
+  const totalY =
+    tableY +
+    7 +
+    displayRows.length *
+      rowHeight;
+
+  if (
+    totalY <
+    tableY +
+      tableH -
+      2
+  ) {
+    doc.setFillColor(
+      226,
+      232,
+      240
+    );
+
+    doc.rect(
+      tableX,
+      totalY,
+      tableW,
+      rowHeight + 1,
+      "F"
+    );
+
+    let x =
+      tableX;
+
+    const values = [
+      "TOTAL",
+      fmt(total.encouru),
+      fmt(total.budgetDate),
+      fmt(total.budgetAlloue),
+      fmt(total.reste),
+      `${fmt1(total.consoReelle)}%`,
+      sign(total.ecartH),
+      `${sign(total.ecartPoints)}`,
+      total.statut
+    ];
+
+    values.forEach(
+      (value, colIndex) => {
+
+        const color =
+          colIndex === 8
+            ? (
+                total.statut ===
+                "vert"
+                  ? green
+                  : total.statut ===
+                    "orange"
+                    ? orange
+                    : red
+              )
+            : dark;
+
+        pdfText(
+          doc,
+          String(value),
+          x + 1.5,
+          totalY +
+            rowHeight,
+          {
+            size: 4.1,
+            color,
+            bold: true
+          }
+        );
+
+        x +=
+          cols[colIndex]
+            .width;
+      }
+    );
+  }
+
+
+  /* =======================================================
+     ZONE ANALYSE
+     ======================================================= */
+
+  const analysisX =
+    M + tableW + 4;
+
+  const analysisY = 51;
+
+  const analysisW =
+    PAGE_W -
+    M -
+    analysisX;
+
+  const analysisH = 74;
+
+  pdfRect(
+    doc,
+    analysisX,
+    analysisY,
+    analysisW,
+    analysisH,
+    [255, 255, 255],
+    2
+  );
+
+  pdfText(
+    doc,
+    "ANALYSE DE LA SITUATION",
+    analysisX + 5,
+    analysisY + 8,
+    {
+      size: 7,
+      color: dark,
+      bold: true
+    }
+  );
+
+  pdfLine(
+    doc,
+    analysisX + 5,
+    analysisY + 11,
+    analysisX +
+      analysisW -
+      5,
+    analysisY + 11
+  );
+
+
+  let analysisText = "";
+
+  if (
+    total.ecartH > 0
+  ) {
+    analysisText =
+      `La consommation cumulée est supérieure ` +
+      `au budget à date de ${fmt(
+        total.ecartH
+      )} h.`;
+  } else {
+    analysisText =
+      `La consommation cumulée reste inférieure ` +
+      `au budget à date de ${fmt(
+        Math.abs(
+          total.ecartH
+        )
+      )} h.`;
+  }
+
+
+  const lines =
+    doc.splitTextToSize(
+      analysisText,
+      analysisW - 10
+    );
+
+  lines.forEach(
+    (line, i) => {
+      pdfText(
+        doc,
+        line,
+        analysisX + 5,
+        analysisY +
+          18 +
+          i * 4,
+        {
+          size: 6,
+          color: text
+        }
+      );
+    }
+  );
+
+
+  pdfText(
+    doc,
+    "Consommation réelle",
+    analysisX + 5,
+    analysisY + 33,
+    {
+      size: 5.5,
+      color: muted
+    }
+  );
+
+  pdfText(
+    doc,
+    `${fmt1(
+      total.consoReelle
+    )} %`,
+    analysisX + 5,
+    analysisY + 40,
+    {
+      size: 10,
+      color: blue,
+      bold: true
+    }
+  );
+
+
+  pdfText(
+    doc,
+    "Consommation à date",
+    analysisX + 55,
+    analysisY + 33,
+    {
+      size: 5.5,
+      color: muted
+    }
+  );
+
+  pdfText(
+    doc,
+    `${fmt1(
+      total.consoDate
+    )} %`,
+    analysisX + 55,
+    analysisY + 40,
+    {
+      size: 10,
+      color: orange,
+      bold: true
+    }
+  );
+
+
+  pdfText(
+    doc,
+    "Écart",
+    analysisX + 105,
+    analysisY + 33,
+    {
+      size: 5.5,
+      color: muted
+    }
+  );
+
+  pdfText(
+    doc,
+    `${sign(
+      total.ecartPoints
+    )} pts`,
+    analysisX + 105,
+    analysisY + 40,
+    {
+      size: 10,
+      color:
+        total.ecartPoints > 0
+          ? orange
+          : green,
+      bold: true
+    }
+  );
+
+
+  /* =======================================================
+     BARRE DE STATUT
+     ======================================================= */
+
+  const barX =
+    analysisX + 5;
+
+  const barY =
+    analysisY + 48;
+
+  const barW =
+    analysisW - 10;
+
+  const barH = 6;
+
+  const budget =
+    Math.max(
+      Number(
+        total.budgetAlloue
+      ) || 0,
+      1
+    );
+
+  const consumedRatio =
+    Math.max(
+      0,
+      Math.min(
+        1,
+        Number(
+          total.encouru
+        ) /
+          budget
+      )
+    );
+
+  pdfRect(
+    doc,
+    barX,
+    barY,
+    barW,
+    barH,
+    [226, 232, 240],
+    2
+  );
+
+  pdfRect(
+    doc,
+    barX,
+    barY,
+    barW *
+      consumedRatio,
+    barH,
+    total.encouru >
+      total.budgetAlloue
+      ? red
+      : blue,
+    2
+  );
+
+  pdfText(
+    doc,
+    `${fmt(
+      total.encouru
+    )} h consommées / ${fmt(
+      total.budgetAlloue
+    )} h`,
+    barX,
+    barY + 12,
+    {
+      size: 5,
+      color: muted
+    }
+  );
+
+
+  /* =======================================================
+     HISTOGRAMMES
+     ======================================================= */
+
+  const chartSectionY =
+    129;
+
+  pdfText(
+    doc,
+    "INDICATEURS PAR MÉTIER",
+    M,
+    chartSectionY,
+    {
+      size: 8,
+      color: dark,
+      bold: true
+    }
+  );
+
+
+  /* =======================================================
+     CHART 1
+     Budget / consommé
+     ======================================================= */
+
+  const chartY =
+    chartSectionY + 4;
+
+  const chartGap = 4;
+
+  const chartW =
+    (PAGE_W -
+      2 * M -
+      chartGap) /
+    2;
+
+  const chartH = 67;
+
+
+  function drawBarChart(
+    x,
+    y,
+    width,
+    height,
+    title,
+    rows,
+    firstKey,
+    secondKey,
+    firstColor,
+    secondColor,
+    firstLabel,
+    secondLabel
+  ) {
+
+    pdfRect(
+      doc,
+      x,
+      y,
+      width,
+      height,
+      [255, 255, 255],
+      2
+    );
+
+    pdfText(
+      doc,
+      title,
+      x + 5,
+      y + 7,
+      {
+        size: 6.5,
+        color: dark,
+        bold: true
+      }
+    );
+
+    /* Légende */
+
+    const legendY =
+      y + 6;
+
+    doc.setFillColor(
+      ...firstColor
+    );
+
+    doc.rect(
+      x + width - 62,
+      legendY - 3,
+      3,
+      3,
+      "F"
+    );
+
+    pdfText(
+      doc,
+      firstLabel,
+      x + width - 57,
+      legendY,
+      {
+        size: 4.5,
+        color: muted
+      }
+    );
+
+    doc.setFillColor(
+      ...secondColor
+    );
+
+    doc.rect(
+      x + width - 31,
+      legendY - 3,
+      3,
+      3,
+      "F"
+    );
+
+    pdfText(
+      doc,
+      secondLabel,
+      x + width - 26,
+      legendY,
+      {
+        size: 4.5,
+        color: muted
+      }
+    );
+
+
+    const left =
+      x + 31;
+
+    const right =
+      x + width - 5;
+
+    const top =
+      y + 12;
+
+    const bottom =
+      y + height - 7;
+
+    const plotW =
+      right - left;
+
+    const plotH =
+      bottom - top;
+
+
+    const maxValue =
+      Math.max(
+        1,
+        ...rows.flatMap(
+          r => [
+            Number(
+              r[firstKey]
+            ) || 0,
+            Number(
+              r[secondKey]
+            ) || 0
+          ]
+        )
+      );
+
+
+    const rowH =
+      plotH /
+      Math.max(
+        rows.length,
+        1
+      );
+
+
+    /* grille */
+
+    [0, 0.25, 0.5, 0.75, 1].forEach(
+      ratio => {
+
+        const gx =
+          left +
+          plotW *
+            ratio;
+
+        pdfLine(
+          doc,
+          gx,
+          top,
+          gx,
+          bottom,
+          [241, 245, 249],
+          0.2
+        );
+
+        pdfText(
+          doc,
+          fmt(
+            maxValue *
+              ratio
+          ),
+          gx,
+          top - 1.5,
+          {
+            size: 3.5,
+            color: muted,
+            align:
+              ratio === 0
+                ? "left"
+                : ratio === 1
+                  ? "right"
+                  : "center"
+          }
+        );
+      }
+    );
+
+
+    rows.forEach(
+      (r, index) => {
+
+        const rowY =
+          top +
+          index *
+            rowH;
+
+        const labelY =
+          rowY +
+          rowH *
+            0.7;
+
+        const label =
+          String(
+            r.metier
+          );
+
+        pdfText(
+          doc,
+          label.length > 18
+            ? `${label.slice(
+                0,
+                17
+              )}…`
+            : label,
+          x + 3,
+          labelY,
+          {
+            size: 3.7,
+            color: text,
+            bold: true
+          }
+        );
+
+
+        const v1 =
+          Math.max(
+            0,
+            Number(
+              r[firstKey]
+            ) || 0
+          );
+
+        const v2 =
+          Math.max(
+            0,
+            Number(
+              r[secondKey]
+            ) || 0
+          );
+
+
+        const barHeight =
+          Math.max(
+            0.8,
+            rowH *
+              0.28
+          );
+
+
+        const y1 =
+          rowY +
+          rowH *
+            0.18;
+
+        const y2 =
+          rowY +
+          rowH *
+            0.56;
+
+
+        doc.setFillColor(
+          ...firstColor
+        );
+
+        doc.rect(
+          left,
+          y1,
+          plotW *
+            (v1 /
+              maxValue),
+          barHeight,
+          "F"
+        );
+
+
+        doc.setFillColor(
+          ...secondColor
+        );
+
+        doc.rect(
+          left,
+          y2,
+          plotW *
+            (v2 /
+              maxValue),
+          barHeight,
+          "F"
+        );
+      }
+    );
+  }
+
+
+  drawBarChart(
+    M,
+    chartY,
+    chartW,
+    chartH,
+    "Budget alloué vs consommé",
+    lignes,
+    "budgetAlloue",
+    "encouru",
+    [148, 163, 184],
+    blue,
+    "Budget",
+    "Consommé"
+  );
+
+
+  drawBarChart(
+    M +
+      chartW +
+      chartGap,
+    chartY,
+    chartW,
+    chartH,
+    "Consommé vs budget à date",
+    lignes,
+    "budgetDate",
+    "encouru",
+    [167, 243, 208],
+    [8, 145, 178],
+    "Budget date",
+    "Consommé"
+  );
+
+
+  /* =======================================================
+     PIED DE PAGE
+     ======================================================= */
+
+  pdfLine(
+    doc,
+    M,
+    PAGE_H - 8,
+    PAGE_W - M,
+    PAGE_H - 8,
+    border,
+    0.3
+  );
+
+  pdfText(
+    doc,
+    "PilotageH · Rapport généré automatiquement",
+    M,
+    PAGE_H - 4,
+    {
+      size: 5,
+      color: muted
+    }
+  );
+
+  pdfText(
+    doc,
+    meta.affaire
+      ? `Analyse filtrée : ${meta.affaire}`
+      : "Analyse globale",
+    PAGE_W / 2,
+    PAGE_H - 4,
+    {
+      size: 5,
+      color: muted,
+      align: "center"
+    }
+  );
+
+  pdfText(
+    doc,
+    `${lignes.length} métiers`,
+    PAGE_W - M,
+    PAGE_H - 4,
+    {
+      size: 5,
+      color: muted,
+      align: "right"
+    }
+  );
+
+
+  /* =======================================================
+     SAUVEGARDE
+     ======================================================= */
+
+  const safeAffaire =
+    String(
+      meta.affaire ||
+        "global"
+    )
+      .replace(
+        /[^a-zA-Z0-9-_]/g,
+        "_"
+      )
+      .slice(0, 50);
+
+  doc.save(
+    `pilotageh_rapport_${safeAffaire}.pdf`
+  );
+}
+
+
+/* =========================================================
    HOOK GLOBAL DES DONNÉES
    ========================================================= */
 
 function useData() {
-  const [rows, setRows] = useState([]);
-  const [settings, setSettings] = useState(loadSettings());
+
+  const [rows, setRows] =
+    useState([]);
+
+  const [settings, setSettings] =
+    useState(
+      loadSettings()
+    );
+
 
   useEffect(() => {
+
     let mounted = true;
 
+
     const load = async () => {
+
       try {
-        const data = await loadData();
 
-        if (!mounted) return;
+        const data =
+          await loadData();
 
-        syncMetiers(data);
-        setRows(data);
+        if (!mounted) {
+          return;
+        }
+
+        syncMetiers(
+          data
+        );
+
+        setRows(
+          data
+        );
+
       } catch (error) {
+
         console.error(
           "Erreur chargement des données :",
           error
         );
+
       }
+
     };
 
+
     load();
+
 
     const onData = () => {
       load();
     };
 
+
     const onSettings = () => {
+
       if (mounted) {
-        setSettings(loadSettings());
+
+        setSettings(
+          loadSettings()
+        );
+
       }
+
     };
+
 
     window.addEventListener(
       "pilotageh-data",
@@ -133,10 +1462,13 @@ function useData() {
       onSettings
     );
 
+
     const unsubscribeRealtime =
       subscribeToDataChanges();
 
+
     return () => {
+
       mounted = false;
 
       window.removeEventListener(
@@ -149,13 +1481,20 @@ function useData() {
         onSettings
       );
 
+
       if (
-        typeof unsubscribeRealtime === "function"
+        typeof unsubscribeRealtime ===
+        "function"
       ) {
+
         unsubscribeRealtime();
+
       }
+
     };
+
   }, []);
+
 
   return {
     rows,
@@ -173,23 +1512,34 @@ function Header({
   subtitle,
   actions
 }) {
+
   return (
     <div className="pagehead">
+
       <div>
-        <h1>{title}</h1>
-        <p>{subtitle}</p>
+
+        <h1>
+          {title}
+        </h1>
+
+        <p>
+          {subtitle}
+        </p>
+
       </div>
+
 
       <div className="actions">
         {actions}
       </div>
+
     </div>
   );
 }
 
 
 /* =========================================================
-   GRAPHIQUE HORIZONTAL SCROLLABLE
+   GRAPHIQUE MÉTIERS
    ========================================================= */
 
 function MetiersBarChart({
@@ -197,19 +1547,13 @@ function MetiersBarChart({
   bars,
   yAxisUnit
 }) {
-  /*
-   * Largeur dynamique :
-   * environ 120 px par métier.
-   *
-   * Cela permet d'afficher tous les métiers
-   * sans qu'ils se chevauchent.
-   */
 
   const chartWidth =
     Math.max(
       100,
       data.length * 120
     );
+
 
   return (
     <div
@@ -220,17 +1564,21 @@ function MetiersBarChart({
         paddingBottom: "8px"
       }}
     >
+
       <div
         style={{
-          width: `${chartWidth}px`,
+          width:
+            `${chartWidth}px`,
           minWidth: "100%",
           height: "300px"
         }}
       >
+
         <ResponsiveContainer
           width="100%"
           height="100%"
         >
+
           <BarChart
             data={data}
             margin={{
@@ -240,6 +1588,7 @@ function MetiersBarChart({
               left: 0
             }}
           >
+
             <CartesianGrid
               strokeDasharray="3 3"
               vertical={false}
@@ -257,7 +1606,10 @@ function MetiersBarChart({
             />
 
             <YAxis
-              unit={yAxisUnit || ""}
+              unit={
+                yAxisUnit ||
+                ""
+              }
             />
 
             <Tooltip />
@@ -266,17 +1618,31 @@ function MetiersBarChart({
               <Legend />
             )}
 
-            {bars.map(bar => (
-              <Bar
-                key={bar.dataKey}
-                dataKey={bar.dataKey}
-                name={bar.name}
-                fill={bar.fill}
-              />
-            ))}
+            {bars.map(
+              bar => (
+                <Bar
+                  key={
+                    bar.dataKey
+                  }
+                  dataKey={
+                    bar.dataKey
+                  }
+                  name={
+                    bar.name
+                  }
+                  fill={
+                    bar.fill
+                  }
+                />
+              )
+            )}
+
           </BarChart>
+
         </ResponsiveContainer>
+
       </div>
+
     </div>
   );
 }
@@ -287,10 +1653,12 @@ function MetiersBarChart({
    ========================================================= */
 
 function Dashboard() {
+
   const {
     rows,
     settings
   } = useData();
+
 
   const [
     searchParams,
@@ -298,56 +1666,61 @@ function Dashboard() {
   ] = useSearchParams();
 
 
-  /*
-   * Récupération du filtre Affaire depuis l'URL.
-   *
-   * Exemple :
-   *
-   * /?affaire=AFF-001
-   */
-
-  const initialAffaire =
-    searchParams.get("affaire") || "";
-
-
   const [
     filters,
     setFilters
-  ] = useState(() => ({
-    affaire: initialAffaire,
+  ] = useState(
+    () => ({
+      affaire:
+        searchParams.get(
+          "affaire"
+        ) || "",
 
-    metier:
-      searchParams.get("metier") || "",
+      metier:
+        searchParams.get(
+          "metier"
+        ) || "",
 
-    date:
-      searchParams.get("date") || ""
-  }));
+      date:
+        searchParams.get(
+          "date"
+        ) || ""
+    })
+  );
 
 
   /*
-   * Synchronisation des filtres avec l'URL.
-   *
-   * Cela permet de conserver les filtres
-   * lorsqu'on ouvre un détail métier.
+   * Synchronisation URL
    */
 
   useEffect(() => {
+
     const params = {};
 
-    if (filters.affaire) {
+
+    if (
+      filters.affaire
+    ) {
       params.affaire =
         filters.affaire;
     }
 
-    if (filters.metier) {
+
+    if (
+      filters.metier
+    ) {
       params.metier =
         filters.metier;
     }
 
-    if (filters.date) {
+
+    if (
+      filters.date
+    ) {
       params.date =
         filters.date;
     }
+
 
     setSearchParams(
       params,
@@ -355,41 +1728,35 @@ function Dashboard() {
         replace: true
       }
     );
+
   }, [
     filters,
     setSearchParams
   ]);
 
 
-  const s = useMemo(
-    () =>
-      synthese(
+  const s =
+    useMemo(
+      () =>
+        synthese(
+          rows,
+          METIERS,
+          filters,
+          settings
+        ),
+      [
         rows,
-        METIERS,
         filters,
         settings
-      ),
-    [
-      rows,
-      filters,
-      settings
-    ]
-  );
+      ]
+    );
 
 
-  const t = s.total;
+  const t =
+    s.total;
 
 
-  /*
-   * IMPORTANT :
-   *
-   * On utilise partout "affaires".
-   * Cela évite l'erreur :
-   *
-   * ReferenceError: affaires is not defined
-   */
-
-  const affaires =
+  const affairs =
     distinct(
       rows,
       "affaire"
@@ -403,51 +1770,50 @@ function Dashboard() {
     );
 
 
-  /* =======================================================
-     EXPORT PDF
-     ======================================================= */
+  const handlePDF =
+    () => {
 
-  const handleExportPDF = () => {
-    try {
-      exportPDF(
+      exportProfessionalPDF(
         s.lignes,
         t,
         {
           date:
             settings.dateAnalyse,
 
-          affaires
+          affaire:
+            filters.affaire ||
+            "",
+
+          metier:
+            filters.metier ||
+            "",
+
+          green:
+            settings.green,
+
+          orange:
+            settings.orange
         }
       );
-    } catch (error) {
-      console.error(
-        "Erreur génération PDF :",
-        error
-      );
 
-      alert(
-        "Impossible de générer le PDF. Consultez la console pour plus de détails."
-      );
-    }
-  };
+    };
 
 
   return (
     <>
+
       <Header
         title="Dashboard de pilotage"
-
         subtitle={
           `Consommation des heures par métier · ` +
-          `${affaires} affaire${affaires > 1 ? "s" : ""}`
+          `${affairs} affaire${
+            affairs > 1
+              ? "s"
+              : ""
+          }`
         }
-
         actions={
           <>
-
-            {/* ==============================
-                EXPORT EXCEL
-               ============================== */}
 
             <button
               className="btn"
@@ -461,14 +1827,9 @@ function Dashboard() {
               <FileSpreadsheet
                 size={15}
               />
-
               Excel
             </button>
 
-
-            {/* ==============================
-                EXPORT CSV
-               ============================== */}
 
             <button
               className="btn"
@@ -482,25 +1843,19 @@ function Dashboard() {
               <Download
                 size={15}
               />
-
               CSV
             </button>
 
 
-            {/* ==============================
-                EXPORT PDF
-               ============================== */}
-
             <button
               className="btn"
               onClick={
-                handleExportPDF
+                handlePDF
               }
             >
               <FileText
                 size={15}
               />
-
               PDF
             </button>
 
@@ -512,30 +1867,32 @@ function Dashboard() {
       <Filters
         rows={rows}
         filters={filters}
-        setFilters={setFilters}
+        setFilters={
+          setFilters
+        }
       />
 
-
-      {/* =================================================
-          KPI
-         ================================================= */}
 
       <div className="kpis">
 
         <KPI
           label="Budget alloué"
-          value={fmt(
-            t.budgetAlloue
-          )}
+          value={
+            fmt(
+              t.budgetAlloue
+            )
+          }
           unit="h"
         />
 
 
         <KPI
           label="Heures consommées"
-          value={fmt(
-            t.encouru
-          )}
+          value={
+            fmt(
+              t.encouru
+            )
+          }
           unit="h"
           kind="blue"
         />
@@ -543,9 +1900,11 @@ function Dashboard() {
 
         <KPI
           label="Budget à date"
-          value={fmt(
-            t.budgetDate
-          )}
+          value={
+            fmt(
+              t.budgetDate
+            )
+          }
           unit="h"
           kind="green"
         />
@@ -553,9 +1912,11 @@ function Dashboard() {
 
         <KPI
           label="Écart consommé / date"
-          value={sign(
-            t.ecartH
-          )}
+          value={
+            sign(
+              t.ecartH
+            )
+          }
           unit="h"
           kind={
             t.ecartH > 0
@@ -572,9 +1933,11 @@ function Dashboard() {
 
         <KPI
           label="Consommation"
-          value={fmt1(
-            t.consoReelle
-          )}
+          value={
+            fmt1(
+              t.consoReelle
+            )
+          }
           unit="%"
           kind="amber"
           sub={
@@ -587,9 +1950,11 @@ function Dashboard() {
 
         <KPI
           label="Écart au théorique"
-          value={sign(
-            t.ecartPoints
-          )}
+          value={
+            sign(
+              t.ecartPoints
+            )
+          }
           unit="pts"
           kind={
             t.ecartPoints >
@@ -605,26 +1970,18 @@ function Dashboard() {
       </div>
 
 
-      {/* =================================================
-          TABLEAU
-         ================================================= */}
-
       <Table
-        lignes={s.lignes}
+        lignes={
+          s.lignes
+        }
         total={t}
-        filters={filters}
+        filters={
+          filters
+        }
       />
 
 
-      {/* =================================================
-          GRAPHIQUES
-         ================================================= */}
-
       <div className="grid2">
-
-        {/* =================================================
-            HISTOGRAMME 1
-           ================================================= */}
 
         <Card
           title="Budget alloué vs consommé"
@@ -632,26 +1989,23 @@ function Dashboard() {
         >
 
           <MetiersBarChart
-            data={s.lignes}
+            data={
+              s.lignes
+            }
             bars={[
               {
                 dataKey:
                   "budgetAlloue",
-
                 name:
                   "Budget alloué",
-
                 fill:
                   "#94a3b8"
               },
-
               {
                 dataKey:
                   "encouru",
-
                 name:
                   "Consommé",
-
                 fill:
                   "#2563eb"
               }
@@ -661,10 +2015,6 @@ function Dashboard() {
         </Card>
 
 
-        {/* =================================================
-            HISTOGRAMME 2
-           ================================================= */}
-
         <Card
           title="Consommé vs budget à date"
           subtitle="Indicateur principal de pilotage"
@@ -672,26 +2022,23 @@ function Dashboard() {
         >
 
           <MetiersBarChart
-            data={s.lignes}
+            data={
+              s.lignes
+            }
             bars={[
               {
                 dataKey:
                   "budgetDate",
-
                 name:
                   "Budget à date",
-
                 fill:
                   "#a7f3d0"
               },
-
               {
                 dataKey:
                   "encouru",
-
                 name:
                   "Consommé",
-
                 fill:
                   "#0891b2"
               }
@@ -701,37 +2048,30 @@ function Dashboard() {
         </Card>
 
 
-        {/* =================================================
-            HISTOGRAMME 3
-           ================================================= */}
-
         <Card
           title="Taux de consommation"
           subtitle="Consommé / budget alloué"
         >
 
           <MetiersBarChart
-            data={s.lignes}
+            data={
+              s.lignes
+            }
             yAxisUnit="%"
             bars={[
               {
                 dataKey:
                   "consoReelle",
-
                 name:
                   "Consommation réelle",
-
                 fill:
                   "#2563eb"
               },
-
               {
                 dataKey:
                   "consoDate",
-
                 name:
                   "Budget à date",
-
                 fill:
                   "#cbd5e1"
               }
@@ -740,10 +2080,6 @@ function Dashboard() {
 
         </Card>
 
-
-        {/* =================================================
-            CAMEMBERT
-           ================================================= */}
 
         <Card
           title="Répartition des heures consommées"
@@ -758,7 +2094,9 @@ function Dashboard() {
             <PieChart>
 
               <Pie
-                data={pieData}
+                data={
+                  pieData
+                }
                 dataKey="encouru"
                 nameKey="metier"
                 innerRadius={60}
@@ -767,16 +2105,19 @@ function Dashboard() {
               >
 
                 {pieData.map(
-                  (x, index) => (
+                  (
+                    x,
+                    index
+                  ) => (
 
                     <Cell
                       key={
                         `${x.metier}-${index}`
                       }
-
                       fill={
-                        COLORS[x.metier] ||
-                        COLORS.default ||
+                        COLORS[
+                          x.metier
+                        ] ||
                         "#64748b"
                       }
                     />
@@ -785,7 +2126,6 @@ function Dashboard() {
                 )}
 
               </Pie>
-
 
               <Tooltip />
 
@@ -798,6 +2138,7 @@ function Dashboard() {
         </Card>
 
       </div>
+
     </>
   );
 }
@@ -808,23 +2149,28 @@ function Dashboard() {
    ========================================================= */
 
 function Login() {
+
   const nav =
     useNavigate();
+
 
   const [
     email,
     setEmail
   ] = useState("");
 
+
   const [
     password,
     setPassword
   ] = useState("");
 
+
   const [
     busy,
     setBusy
   ] = useState(false);
+
 
   const [
     error,
@@ -840,6 +2186,7 @@ function Login() {
       setBusy(true);
       setError("");
 
+
       try {
 
         await signIn(
@@ -847,7 +2194,9 @@ function Login() {
           password
         );
 
-        nav("/imports");
+        nav(
+          "/imports"
+        );
 
       } catch (err) {
 
@@ -865,6 +2214,7 @@ function Login() {
         setBusy(false);
 
       }
+
     };
 
 
@@ -880,7 +2230,9 @@ function Login() {
       >
 
         <form
-          onSubmit={handleSubmit}
+          onSubmit={
+            handleSubmit
+          }
           className="loginform"
         >
 
@@ -889,15 +2241,19 @@ function Login() {
 
             <input
               type="email"
-              value={email}
-              onChange={e =>
-                setEmail(
-                  e.target.value
-                )
+              value={
+                email
+              }
+              onChange={
+                e =>
+                  setEmail(
+                    e.target.value
+                  )
               }
               placeholder="votre@email.fr"
               required
             />
+
           </label>
 
 
@@ -906,15 +2262,19 @@ function Login() {
 
             <input
               type="password"
-              value={password}
-              onChange={e =>
-                setPassword(
-                  e.target.value
-                )
+              value={
+                password
+              }
+              onChange={
+                e =>
+                  setPassword(
+                    e.target.value
+                  )
               }
               placeholder="••••••••"
               required
             />
+
           </label>
 
 
@@ -928,7 +2288,9 @@ function Login() {
           <button
             className="btn primary"
             type="submit"
-            disabled={busy}
+            disabled={
+              busy
+            }
           >
             {busy
               ? "Connexion…"
@@ -946,7 +2308,6 @@ function Login() {
             <ArrowLeft
               size={15}
             />
-
             Retour au dashboard
           </button>
 
@@ -966,13 +2327,17 @@ function Login() {
 function ProtectedRoute({
   children
 }) {
+
   const nav =
     useNavigate();
+
 
   const [
     session,
     setSession
-  ] = useState(undefined);
+  ] = useState(
+    undefined
+  );
 
 
   useEffect(() => {
@@ -981,25 +2346,33 @@ function ProtectedRoute({
 
 
     getSession()
-      .then(s => {
+      .then(
+        s => {
 
-        if (mounted) {
-          setSession(s);
+          if (mounted) {
+            setSession(
+              s
+            );
+          }
+
         }
+      )
+      .catch(
+        error => {
 
-      })
-      .catch(error => {
+          console.error(
+            "Erreur récupération session :",
+            error
+          );
 
-        console.error(
-          "Erreur récupération session :",
-          error
-        );
+          if (mounted) {
+            setSession(
+              null
+            );
+          }
 
-        if (mounted) {
-          setSession(null);
         }
-
-      });
+      );
 
 
     const authSubscription =
@@ -1007,7 +2380,9 @@ function ProtectedRoute({
         s => {
 
           if (mounted) {
-            setSession(s);
+            setSession(
+              s
+            );
           }
 
         }
@@ -1017,6 +2392,7 @@ function ProtectedRoute({
     return () => {
 
       mounted = false;
+
 
       if (
         authSubscription?.data
@@ -1037,7 +2413,8 @@ function ProtectedRoute({
 
 
   if (
-    session === undefined
+    session ===
+    undefined
   ) {
 
     return (
@@ -1097,29 +2474,36 @@ function LoginRedirect({
    ========================================================= */
 
 function Imports() {
+
   const {
     rows
   } = useData();
+
 
   const [
     preview,
     setPreview
   ] = useState(null);
 
+
   const [
     busy,
     setBusy
   ] = useState(false);
+
 
   const [
     msg,
     setMsg
   ] = useState("");
 
+
   const [
     msgType,
     setMsgType
-  ] = useState("success");
+  ] = useState(
+    "success"
+  );
 
 
   const handle =
@@ -1128,11 +2512,17 @@ function Imports() {
       const file =
         e.target.files?.[0];
 
-      if (!file) return;
+
+      if (!file) {
+        return;
+      }
+
 
       setBusy(true);
       setMsg("");
-      setMsgType("success");
+      setMsgType(
+        "success"
+      );
 
 
       try {
@@ -1166,16 +2556,20 @@ function Imports() {
 
         setBusy(false);
 
-        e.target.value = "";
+        e.target.value =
+          "";
 
       }
+
     };
 
 
   const validate =
     async () => {
 
-      if (!preview) return;
+      if (!preview) {
+        return;
+      }
 
 
       if (
@@ -1256,19 +2650,21 @@ function Imports() {
         setBusy(false);
 
       }
+
     };
 
 
   return (
     <>
+
       <Header
         title="Données / Import"
         subtitle={
           "Un seul fichier Excel alimente " +
           "désormais toute l'application."
         }
-
         actions={
+
           <button
             className="btn"
             onClick={
@@ -1283,6 +2679,7 @@ function Imports() {
             Télécharger le modèle Excel
 
           </button>
+
         }
       />
 
@@ -1346,7 +2743,9 @@ function Imports() {
           <input
             type="file"
             accept=".xlsx,.xls,.csv"
-            onChange={handle}
+            onChange={
+              handle
+            }
           />
 
         </label>
@@ -1374,10 +2773,18 @@ function Imports() {
               <div>
 
                 <b>
-                  {preview.valid.length}
+                  {
+                    preview
+                      .valid
+                      .length
+                  }
                   {" "}ligne(s) valide(s)
                   {" / "}
-                  {preview.rows.length}
+                  {
+                    preview
+                      .rows
+                      .length
+                  }
                 </b>
 
 
@@ -1387,9 +2794,13 @@ function Imports() {
 
                     Colonnes manquantes :
                     {" "}
-                    {preview.missing.join(
-                      ", "
-                    )}
+                    {
+                      preview
+                        .missing
+                        .join(
+                          ", "
+                        )
+                    }
 
                   </div>
 
@@ -1405,7 +2816,11 @@ function Imports() {
                     />
 
                     {" "}
-                    {preview.errors.length}
+                    {
+                      preview
+                        .errors
+                        .length
+                    }
                     {" "}ligne(s) en erreur
 
                   </div>
@@ -1420,7 +2835,9 @@ function Imports() {
                 <button
                   className="btn"
                   onClick={() =>
-                    setPreview(null)
+                    setPreview(
+                      null
+                    )
                   }
                 >
                   Annuler
@@ -1461,12 +2878,29 @@ function Imports() {
                 <thead>
 
                   <tr>
-                    <th>Affaire</th>
-                    <th>Métier</th>
-                    <th>Consommé</th>
-                    <th>Budget date</th>
-                    <th>Budget alloué</th>
-                    <th>Date</th>
+                    <th>
+                      Affaire
+                    </th>
+
+                    <th>
+                      Métier
+                    </th>
+
+                    <th>
+                      Consommé
+                    </th>
+
+                    <th>
+                      Budget date
+                    </th>
+
+                    <th>
+                      Budget alloué
+                    </th>
+
+                    <th>
+                      Date
+                    </th>
                   </tr>
 
                 </thead>
@@ -1475,40 +2909,60 @@ function Imports() {
                 <tbody>
 
                   {preview.rows
-                    .slice(0, 100)
-                    .map(row => (
+                    .slice(
+                      0,
+                      100
+                    )
+                    .map(
+                      row => (
 
-                      <tr
-                        key={row.id}
-                      >
+                        <tr
+                          key={
+                            row.id
+                          }
+                        >
 
-                        <td>
-                          {row.affaire}
-                        </td>
+                          <td>
+                            {
+                              row.affaire
+                            }
+                          </td>
 
-                        <td>
-                          {row.metier}
-                        </td>
+                          <td>
+                            {
+                              row.metier
+                            }
+                          </td>
 
-                        <td>
-                          {row.encouru}
-                        </td>
+                          <td>
+                            {
+                              row.encouru
+                            }
+                          </td>
 
-                        <td>
-                          {row.budgetDate}
-                        </td>
+                          <td>
+                            {
+                              row.budgetDate
+                            }
+                          </td>
 
-                        <td>
-                          {row.budgetAlloue}
-                        </td>
+                          <td>
+                            {
+                              row.budgetAlloue
+                            }
+                          </td>
 
-                        <td>
-                          {row.date || "—"}
-                        </td>
+                          <td>
+                            {
+                              row.date ||
+                              "—"
+                            }
+                          </td>
 
-                      </tr>
+                        </tr>
 
-                    ))}
+                      )
+                    )}
 
                 </tbody>
 
@@ -1531,9 +2985,11 @@ function Imports() {
 
           <div className="bigstat">
 
-            {fmt(
-              rows.length
-            )}
+            {
+              fmt(
+                rows.length
+              )
+            }
 
             {" "}
 
@@ -1580,9 +3036,11 @@ function Imports() {
 
                   await resetData();
 
+
                   setMsg(
                     "Données supprimées."
                   );
+
 
                   setMsgType(
                     "success"
@@ -1595,10 +3053,12 @@ function Imports() {
                     err
                   );
 
+
                   setMsg(
                     "Erreur suppression : " +
                     err.message
                   );
+
 
                   setMsgType(
                     "danger"
@@ -1621,6 +3081,7 @@ function Imports() {
         </Card>
 
       </div>
+
     </>
   );
 }
@@ -1631,6 +3092,7 @@ function Imports() {
    ========================================================= */
 
 function Analyse() {
+
   const {
     rows,
     settings
@@ -1646,44 +3108,50 @@ function Analyse() {
   const [
     metier,
     setMetier
-  ] = useState("Tous");
-
-
-  const s = useMemo(
-    () =>
-      synthese(
-        rows,
-        METIERS,
-        filters,
-        settings
-      ),
-    [
-      rows,
-      filters,
-      settings
-    ]
+  ] = useState(
+    "Tous"
   );
 
 
-  useEffect(() => {
+  const s =
+    useMemo(
+      () =>
+        synthese(
+          rows,
+          METIERS,
+          filters,
+          settings
+        ),
+      [
+        rows,
+        filters,
+        settings
+      ]
+    );
 
-    if (
-      metier !== "Tous" &&
-      !METIERS.includes(
-        metier
-      )
-    ) {
 
-      setMetier(
-        "Tous"
-      );
+  useEffect(
+    () => {
 
-    }
+      if (
+        metier !== "Tous" &&
+        !METIERS.includes(
+          metier
+        )
+      ) {
 
-  }, [
-    rows,
-    metier
-  ]);
+        setMetier(
+          "Tous"
+        );
+
+      }
+
+    },
+    [
+      rows,
+      metier
+    ]
+  );
 
 
   const rs =
@@ -1691,17 +3159,22 @@ function Analyse() {
       ? s.filtered
       : s.filtered.filter(
           x =>
-            x.metier === metier
+            x.metier ===
+            metier
         );
 
 
-  const dates = [
-    ...new Set(
-      rs
-        .map(x => x.date)
-        .filter(Boolean)
-    )
-  ].sort();
+  const dates =
+    [
+      ...new Set(
+        rs
+          .map(
+            x =>
+              x.date
+          )
+          .filter(Boolean)
+      )
+    ].sort();
 
 
   let cumul = 0;
@@ -1711,34 +3184,46 @@ function Analyse() {
     dates.map(
       date => {
 
-        cumul += rs
-          .filter(
-            x =>
-              x.date === date
-          )
-          .reduce(
-            (a, x) =>
-              a + x.encouru,
-            0
-          );
+        cumul +=
+          rs
+            .filter(
+              x =>
+                x.date ===
+                date
+            )
+            .reduce(
+              (
+                a,
+                x
+              ) =>
+                a +
+                x.encouru,
+              0
+            );
 
 
         const budgetDate =
           rs
             .filter(
               x =>
-                x.date === date
+                x.date ===
+                date
             )
             .reduce(
-              (a, x) =>
-                a + x.budgetDate,
+              (
+                a,
+                x
+              ) =>
+                a +
+                x.budgetDate,
               0
             );
 
 
         return {
           date,
-          encouru: cumul,
+          encouru:
+            cumul,
           budgetDate
         };
 
@@ -1748,6 +3233,7 @@ function Analyse() {
 
   return (
     <>
+
       <Header
         title="Analyse"
         subtitle={
@@ -1758,9 +3244,15 @@ function Analyse() {
 
 
       <Filters
-        rows={rows}
-        filters={filters}
-        setFilters={setFilters}
+        rows={
+          rows
+        }
+        filters={
+          filters
+        }
+        setFilters={
+          setFilters
+        }
       />
 
 
@@ -1772,11 +3264,14 @@ function Analyse() {
 
 
         <select
-          value={metier}
-          onChange={e =>
-            setMetier(
-              e.target.value
-            )
+          value={
+            metier
+          }
+          onChange={
+            e =>
+              setMetier(
+                e.target.value
+              )
           }
         >
 
@@ -1807,7 +3302,6 @@ function Analyse() {
         title={
           `Évolution temporelle — ${metier}`
         }
-
         subtitle={
           "Disponible si la colonne Date est présente " +
           "dans le fichier d'alimentation."
@@ -1822,7 +3316,9 @@ function Analyse() {
           >
 
             <LineChart
-              data={serie}
+              data={
+                serie
+              }
             >
 
               <CartesianGrid
@@ -1888,15 +3384,15 @@ function Analyse() {
         >
 
           <MetiersBarChart
-            data={s.lignes}
+            data={
+              s.lignes
+            }
             bars={[
               {
                 dataKey:
                   "ecartH",
-
                 name:
                   "Écart (h)",
-
                 fill:
                   "#0891b2"
               }
@@ -1911,15 +3407,15 @@ function Analyse() {
         >
 
           <MetiersBarChart
-            data={s.lignes}
+            data={
+              s.lignes
+            }
             bars={[
               {
                 dataKey:
                   "ecartPoints",
-
                 name:
                   "Écart (pts)",
-
                 fill:
                   "#7c3aed"
               }
@@ -1929,6 +3425,7 @@ function Analyse() {
         </Card>
 
       </div>
+
     </>
   );
 }
@@ -1939,6 +3436,7 @@ function Analyse() {
    ========================================================= */
 
 function Detail() {
+
   const {
     nom
   } = useParams();
@@ -1965,41 +3463,46 @@ function Detail() {
   } = useData();
 
 
-  /*
-   * Récupération du filtre Affaire
-   * transmis depuis le Dashboard.
-   */
-
   const affaire =
     searchParams.get(
       "affaire"
     ) || "";
 
 
-  const s = useMemo(
-    () =>
-      synthese(
+  const date =
+    searchParams.get(
+      "date"
+    ) || "";
+
+
+  const s =
+    useMemo(
+      () =>
+        synthese(
+          rows,
+          METIERS,
+          {
+            metier,
+            affaire,
+            date
+          },
+          settings
+        ),
+      [
         rows,
-        METIERS,
-        {
-          metier,
-          affaire
-        },
+        metier,
+        affaire,
+        date,
         settings
-      ),
-    [
-      rows,
-      metier,
-      affaire,
-      settings
-    ]
-  );
+      ]
+    );
 
 
   const r =
     s.lignes.find(
       x =>
-        x.metier === metier
+        x.metier ===
+        metier
     );
 
 
@@ -2015,41 +3518,48 @@ function Detail() {
 
 
   /*
-   * Retour au Dashboard.
-   *
-   * Le filtre Affaire est conservé.
+   * Retour complet :
+   * on restaure tous les filtres
+   * connus du Dashboard.
    */
 
-  const handleBack = () => {
+  const handleBack =
+    () => {
 
-    const params = {};
-
-
-    if (affaire) {
-
-      params.affaire =
-        affaire;
-
-    }
+      const params =
+        new URLSearchParams();
 
 
-    nav(
-      `/?${new URLSearchParams(
-        params
-      ).toString()}`
-    );
+      if (affaire) {
+        params.set(
+          "affaire",
+          affaire
+        );
+      }
 
-  };
+
+      if (date) {
+        params.set(
+          "date",
+          date
+        );
+      }
+
+
+      nav(
+        `/?${params.toString()}`
+      );
+
+    };
 
 
   return (
     <>
-      <Header
 
+      <Header
         title={
           metier
         }
-
         subtitle={
           `Détail du métier · analyse au ` +
           `${settings.dateAnalyse}` +
@@ -2059,7 +3569,6 @@ function Detail() {
               : ""
           )
         }
-
         actions={
 
           <button
@@ -2078,7 +3587,6 @@ function Detail() {
           </button>
 
         }
-
       />
 
 
@@ -2097,18 +3605,22 @@ function Detail() {
 
         <KPI
           label="Budget alloué"
-          value={fmt(
-            r.budgetAlloue
-          )}
+          value={
+            fmt(
+              r.budgetAlloue
+            )
+          }
           unit="h"
         />
 
 
         <KPI
           label="Consommé"
-          value={fmt(
-            r.encouru
-          )}
+          value={
+            fmt(
+              r.encouru
+            )
+          }
           unit="h"
           kind="blue"
         />
@@ -2116,9 +3628,11 @@ function Detail() {
 
         <KPI
           label="Budget à date"
-          value={fmt(
-            r.budgetDate
-          )}
+          value={
+            fmt(
+              r.budgetDate
+            )
+          }
           unit="h"
           kind="green"
         />
@@ -2126,9 +3640,11 @@ function Detail() {
 
         <KPI
           label="Écart"
-          value={sign(
-            r.ecartH
-          )}
+          value={
+            sign(
+              r.ecartH
+            )
+          }
           unit="h"
           kind={
             r.ecartH > 0
@@ -2140,18 +3656,22 @@ function Detail() {
 
         <KPI
           label="Conso réelle"
-          value={fmt1(
-            r.consoReelle
-          )}
+          value={
+            fmt1(
+              r.consoReelle
+            )
+          }
           unit="%"
         />
 
 
         <KPI
           label="Écart points"
-          value={sign(
-            r.ecartPoints
-          )}
+          value={
+            sign(
+              r.ecartPoints
+            )
+          }
           unit="pts"
           kind={
             r.ecartPoints >
@@ -2177,7 +3697,6 @@ function Detail() {
             value={
               r.consoReelle
             }
-
             color={
               STATUS_COLORS[
                 r.statut
@@ -2188,11 +3707,11 @@ function Detail() {
 
 
           <div className="gaugeval">
-
-            {pct(
-              r.consoReelle
-            )}
-
+            {
+              pct(
+                r.consoReelle
+              )
+            }
           </div>
 
 
@@ -2218,20 +3737,22 @@ function Detail() {
           >
 
             <b>
-
-              {fmt(
-                Math.abs(
-                  r.ecartH
+              {
+                fmt(
+                  Math.abs(
+                    r.ecartH
+                  )
                 )
-              )}{" "}
+              }{" "}
               h
-
             </b>
 
 
-            {r.ecartH > 0
-              ? " consommées au-dessus du budget à date."
-              : " de moins que le budget à date."}
+            {
+              r.ecartH > 0
+                ? " consommées au-dessus du budget à date."
+                : " de moins que le budget à date."
+            }
 
           </div>
 
@@ -2242,17 +3763,21 @@ function Detail() {
             est de{" "}
 
             <b>
-              {pct(
-                r.consoReelle
-              )}
+              {
+                pct(
+                  r.consoReelle
+                )
+              }
             </b>
 
             {" "}contre{" "}
 
             <b>
-              {pct(
-                r.consoDate
-              )}
+              {
+                pct(
+                  r.consoDate
+                )
+              }
             </b>
 
             {" "}du budget alloué
@@ -2260,9 +3785,11 @@ function Detail() {
             soit{" "}
 
             <b>
-              {sign(
-                r.ecartPoints
-              )} points
+              {
+                sign(
+                  r.ecartPoints
+                )
+              } points
             </b>.
 
           </p>
@@ -2271,52 +3798,56 @@ function Detail() {
           <div className="infogrid">
 
             <span>
-
               Budget alloué
 
               <b>
-                {fmt(
-                  r.budgetAlloue
-                )} h
+                {
+                  fmt(
+                    r.budgetAlloue
+                  )
+                } h
               </b>
 
             </span>
 
 
             <span>
-
               Budget à date
 
               <b>
-                {fmt(
-                  r.budgetDate
-                )} h
+                {
+                  fmt(
+                    r.budgetDate
+                  )
+                } h
               </b>
 
             </span>
 
 
             <span>
-
               Consommé
 
               <b>
-                {fmt(
-                  r.encouru
-                )} h
+                {
+                  fmt(
+                    r.encouru
+                  )
+                } h
               </b>
 
             </span>
 
 
             <span>
-
               Reste
 
               <b>
-                {fmt(
-                  r.reste
-                )} h
+                {
+                  fmt(
+                    r.reste
+                  )
+                } h
               </b>
 
             </span>
@@ -2326,6 +3857,7 @@ function Detail() {
         </Card>
 
       </div>
+
     </>
   );
 }
@@ -2392,20 +3924,20 @@ function Gauge({
         x2={
           90 +
           65 *
-          Math.cos(
-            a *
-            Math.PI /
-            180
-          )
+            Math.cos(
+              a *
+                Math.PI /
+                180
+            )
         }
         y2={
           90 +
           65 *
-          Math.sin(
-            a *
-            Math.PI /
-            180
-          )
+            Math.sin(
+              a *
+                Math.PI /
+                180
+            )
         }
         stroke="#334155"
         strokeWidth="2.5"
@@ -2429,6 +3961,7 @@ function Gauge({
    ========================================================= */
 
 function Parametres() {
+
   const {
     settings
   } = useData();
@@ -2437,18 +3970,19 @@ function Parametres() {
   const [
     s,
     setS
-  ] = useState(settings);
-
-
-  useEffect(() => {
-
-    setS(
-      settings
-    );
-
-  }, [
+  ] = useState(
     settings
-  ]);
+  );
+
+
+  useEffect(
+    () => {
+      setS(
+        settings
+      );
+    },
+    [settings]
+  );
 
 
   const handleSave =
@@ -2458,7 +3992,6 @@ function Parametres() {
         Number(
           s.green
         );
-
 
       const orange =
         Number(
@@ -2474,9 +4007,7 @@ function Parametres() {
           orange
         )
       ) {
-
         return;
-
       }
 
 
@@ -2484,9 +4015,7 @@ function Parametres() {
         green < 0 ||
         orange < 0
       ) {
-
         return;
-
       }
 
 
@@ -2499,7 +4028,6 @@ function Parametres() {
         );
 
         return;
-
       }
 
 
@@ -2514,6 +4042,7 @@ function Parametres() {
 
   return (
     <>
+
       <Header
         title="Paramètres"
         subtitle={
@@ -2539,14 +4068,15 @@ function Parametres() {
               value={
                 s.green
               }
-              onChange={e =>
-                setS({
-                  ...s,
-                  green:
-                    Number(
-                      e.target.value
-                    )
-                })
+              onChange={
+                e =>
+                  setS({
+                    ...s,
+                    green:
+                      Number(
+                        e.target.value
+                      )
+                  })
               }
             />
 
@@ -2567,14 +4097,15 @@ function Parametres() {
               value={
                 s.orange
               }
-              onChange={e =>
-                setS({
-                  ...s,
-                  orange:
-                    Number(
-                      e.target.value
-                    )
-                })
+              onChange={
+                e =>
+                  setS({
+                    ...s,
+                    orange:
+                      Number(
+                        e.target.value
+                      )
+                  })
               }
             />
 
@@ -2594,12 +4125,13 @@ function Parametres() {
               value={
                 s.dateAnalyse
               }
-              onChange={e =>
-                setS({
-                  ...s,
-                  dateAnalyse:
-                    e.target.value
-                })
+              onChange={
+                e =>
+                  setS({
+                    ...s,
+                    dateAnalyse:
+                      e.target.value
+                  })
               }
             />
 
@@ -2637,22 +4169,29 @@ function Parametres() {
         <div className="metierlist">
 
           {METIERS.map(
-            (m, i) => (
+            (
+              m,
+              i
+            ) => (
 
               <span
-                key={m}
+                key={
+                  m
+                }
               >
 
                 <i
                   style={{
                     background:
                       COLORS[m] ||
-                      COLORS.default ||
                       "#64748b"
                   }}
                 />
 
-                {i + 1}. {m}
+                {
+                  i + 1
+                }.{" "}
+                {m}
 
               </span>
 
@@ -2755,6 +4294,7 @@ function Parametres() {
         </div>
 
       </Card>
+
     </>
   );
 }
