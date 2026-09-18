@@ -196,7 +196,50 @@ function Dashboard() {
     settings
   } = useData();
 
-  const [filters, setFilters] = useState({});
+  /*
+   * Récupération du dernier filtre mémorisé.
+   * Cela permet de retrouver le filtre après
+   * un passage dans la vue détail métier.
+   */
+  const [filters, setFilters] = useState(() => {
+    try {
+      const saved =
+        sessionStorage.getItem(
+          "pilotageh-dashboard-filters"
+        );
+
+      return saved
+        ? JSON.parse(saved)
+        : {};
+    } catch (error) {
+      console.error(
+        "Erreur lecture des filtres mémorisés :",
+        error
+      );
+
+      return {};
+    }
+  });
+
+
+  /*
+   * Sauvegarde automatique des filtres
+   * du Dashboard.
+   */
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "pilotageh-dashboard-filters",
+        JSON.stringify(filters)
+      );
+    } catch (error) {
+      console.error(
+        "Erreur sauvegarde des filtres :",
+        error
+      );
+    }
+  }, [filters]);
+
 
   const s = useMemo(
     () =>
@@ -359,7 +402,7 @@ function Dashboard() {
       <Table
         lignes={s.lignes}
         total={t}
-        affaire={filters.affaire || ""}
+        filters={filters}
       />
 
       <div className="grid2">
@@ -1570,8 +1613,7 @@ function Analyse() {
 
 function Detail() {
   const {
-    nom,
-    affaire
+    nom
   } = useParams();
 
   const metier =
@@ -1585,39 +1627,64 @@ function Detail() {
     settings
   } = useData();
 
+
   /*
-   * Le filtre Affaire vient directement de l'URL.
-   * Il a été transmis depuis le Dashboard au clic sur "Voir".
+   * On récupère les filtres du Dashboard
+   * mémorisés dans sessionStorage.
    *
-   * Aucun nouveau filtre n'est ajouté sur cette page.
+   * Aucun menu de filtre supplémentaire
+   * n'est affiché dans cette page.
    */
-  const filters = useMemo(
+  const dashboardFilters = useMemo(() => {
+    try {
+      const saved =
+        sessionStorage.getItem(
+          "pilotageh-dashboard-filters"
+        );
+
+      return saved
+        ? JSON.parse(saved)
+        : {};
+    } catch (error) {
+      console.error(
+        "Erreur lecture des filtres du Dashboard :",
+        error
+      );
+
+      return {};
+    }
+  }, []);
+
+
+  /*
+   * Le détail applique automatiquement :
+   * - le métier sélectionné
+   * - l'affaire du Dashboard
+   * - le filtre date du Dashboard
+   */
+  const detailFilters = useMemo(
     () => ({
-      metier,
-      ...(affaire
-        ? {
-            affaire:
-              decodeURIComponent(affaire)
-          }
-        : {})
+      ...dashboardFilters,
+      metier
     }),
     [
-      metier,
-      affaire
+      dashboardFilters,
+      metier
     ]
   );
+
 
   const s = useMemo(
     () =>
       synthese(
         rows,
         METIERS,
-        filters,
+        detailFilters,
         settings
       ),
     [
       rows,
-      filters,
+      detailFilters,
       settings
     ]
   );
@@ -1644,13 +1711,8 @@ function Detail() {
       <Header
         title={metier}
         subtitle={
-          `Détail du métier` +
-          `${
-            affaire
-              ? ` · Affaire : ${decodeURIComponent(affaire)}`
-              : ""
-          }` +
-          ` · analyse au ${settings.dateAnalyse}`
+          `Détail du métier · analyse au ` +
+          `${settings.dateAnalyse}`
         }
         actions={
           <button
@@ -2162,7 +2224,6 @@ function Parametres() {
                 {i + 1}. {m}
 
               </span>
-
             )
           )}
 
@@ -2281,13 +2342,6 @@ export default function App() {
 
           <Route
             path="/metier/:nom"
-            element={
-              <Detail />
-            }
-          />
-
-          <Route
-            path="/metier/:nom/:affaire"
             element={
               <Detail />
             }

@@ -24,9 +24,11 @@ import {
 } from "./calculs";
 
 
-export function Layout({
-  children
-}) {
+/* =========================================================
+   LAYOUT
+   ========================================================= */
+
+export function Layout({ children }) {
   const nav = [
     ["/", "Dashboard", LayoutDashboard],
     ["/imports", "Données / Import", Upload],
@@ -46,10 +48,7 @@ export function Layout({
           </div>
 
           <div>
-            <b>
-              Pilotage Heures
-            </b>
-
+            <b>Pilotage Heures</b>
             <small>
               Contrôle industriel
             </small>
@@ -67,11 +66,10 @@ export function Layout({
                 key={to}
                 to={to}
                 end={to === "/"}
-                className={
-                  ({ isActive }) =>
-                    isActive
-                      ? "nav active"
-                      : "nav"
+                className={({ isActive }) =>
+                  isActive
+                    ? "nav active"
+                    : "nav"
                 }
               >
                 <I size={17} />
@@ -99,6 +97,10 @@ export function Layout({
   );
 }
 
+
+/* =========================================================
+   CARD
+   ========================================================= */
 
 export function Card({
   title,
@@ -146,6 +148,10 @@ export function Card({
 }
 
 
+/* =========================================================
+   KPI
+   ========================================================= */
+
 export function KPI({
   label,
   value,
@@ -155,7 +161,9 @@ export function KPI({
 }) {
   return (
     <div
-      className={`kpi ${kind}`}
+      className={
+        `kpi ${kind}`
+      }
     >
 
       <div className="kpi-label">
@@ -180,6 +188,10 @@ export function KPI({
 }
 
 
+/* =========================================================
+   STATUS
+   ========================================================= */
+
 export function Status({
   status
 }) {
@@ -188,9 +200,7 @@ export function Status({
       className="status"
       style={{
         color:
-          STATUS_COLORS[
-            status
-          ],
+          STATUS_COLORS[status],
         background:
           `${STATUS_COLORS[status]}15`
       }}
@@ -207,6 +217,10 @@ export function Status({
   );
 }
 
+
+/* =========================================================
+   FILTRES
+   ========================================================= */
 
 export function Filters({
   rows,
@@ -227,6 +241,7 @@ export function Filters({
         "fr"
       )
   );
+
 
   const mets = [
     ...new Set(
@@ -334,9 +349,7 @@ export function Filters({
             {[
               ...new Set(
                 rows
-                  .map(
-                    r => r.date
-                  )
+                  .map(r => r.date)
                   .filter(Boolean)
               )
             ]
@@ -374,42 +387,51 @@ export function Filters({
 }
 
 
+/* =========================================================
+   TABLEAU
+   ========================================================= */
+
 export function Table({
   lignes,
   total,
   onDetail = true,
-  affaire = ""
+  filters = {}
 }) {
   const nav =
     useNavigate();
 
 
-  const handleDetail =
-    metier => {
+  /*
+   * Mémorise explicitement les filtres
+   * au moment où l'utilisateur clique sur
+   * "Voir".
+   *
+   * Cela garantit que le détail métier
+   * connaît exactement le contexte du Dashboard.
+   */
+  const handleDetail = (
+    metier
+  ) => {
+    try {
+      sessionStorage.setItem(
+        "pilotageh-dashboard-filters",
+        JSON.stringify(
+          filters || {}
+        )
+      );
+    } catch (error) {
+      console.error(
+        "Erreur sauvegarde des filtres avant détail :",
+        error
+      );
+    }
 
-      /*
-       * Si une affaire est sélectionnée
-       * dans le Dashboard, elle est ajoutée
-       * à l'URL afin d'être récupérée par
-       * la page Detail.
-       *
-       * Exemple :
-       * /metier/Mécanique/AFFAIRE-123
-       */
-
-      const path =
-        affaire
-          ? `/metier/${encodeURIComponent(
-              metier
-            )}/${encodeURIComponent(
-              affaire
-            )}`
-          : `/metier/${encodeURIComponent(
-              metier
-            )}`;
-
-      nav(path);
-    };
+    nav(
+      `/metier/${encodeURIComponent(
+        metier
+      )}`
+    );
+  };
 
 
   return (
@@ -420,6 +442,7 @@ export function Table({
         <thead>
 
           <tr>
+
             <th>Métier</th>
             <th>Consommé</th>
             <th>Budget à date</th>
@@ -431,6 +454,7 @@ export function Table({
             <th>Écart pts</th>
             <th>Statut</th>
             <th>Action</th>
+
           </tr>
 
         </thead>
@@ -548,7 +572,6 @@ export function Table({
                 <td>
 
                   {onDetail && (
-
                     <button
                       className="btn detailbtn"
                       onClick={() =>
@@ -559,7 +582,6 @@ export function Table({
                     >
                       Voir
                     </button>
-
                   )}
 
                 </td>
@@ -648,7 +670,8 @@ export function Table({
 
 
       <div className="tablehint">
-        Cliquez sur « Voir » pour ouvrir le détail du métier.
+        Cliquez sur « Voir » pour ouvrir
+        le détail du métier.
       </div>
 
     </div>
