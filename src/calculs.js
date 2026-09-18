@@ -1,172 +1,287 @@
-export const METIERS = [
-  "Mécanique","Fluide","Mesure","Electricité","Contrôle commande",
-  "Activité spécifique","Indus Nuc","Indus Conv","Indus Elec",
-  "Montage Nuc","Montage Conv","Montage Elec","Architecte",
-  "Pilotage","Transverse","MERI","Essais"
+// =========================
+// MÉTIERS
+// =========================
+
+// Métiers historiques / connus
+export const BASE_METIERS = [
+  "Mécanique",
+  "Fluide",
+  "Mesure",
+  "Electricité",
+  "Contrôle commande",
+  "Activité spécifique",
+  "Indus Nuc",
+  "Indus Conv",
+  "Indus Elec",
+  "Montage Nuc",
+  "Montage Conv",
+  "Montage Elec",
+  "Architecte",
+  "Pilotage",
+  "Transverse",
+  "MERI",
+  "Essais"
 ];
 
-export const COLORS = {
-  "Mécanique":"#2563eb",
-  "Fluide":"#0891b2",
-  "Mesure":"#7c3aed",
-  "Electricité":"#ca8a04",
-  "Contrôle commande":"#db2777",
-  "Activité spécifique":"#0f766e",
-  "Indus Nuc":"#dc2626",
-  "Indus Conv":"#ea580c",
-  "Indus Elec":"#9333ea",
-  "Montage Nuc":"#16a34a",
-  "Montage Conv":"#65a30d",
-  "Montage Elec":"#059669",
-  "Architecte":"#475569",
-  "Pilotage":"#1d4ed8",
-  "Transverse":"#be123c",
-  "MERI":"#7e22ce",
-  "Essais":"#0f766e"
-};
+// Liste dynamique utilisée par toute l'application
+export let METIERS = [...BASE_METIERS];
 
-export const STATUS_COLORS = {
-  vert:"#16a34a",
-  orange:"#ea580c",
-  rouge:"#dc2626"
-};
+/**
+ * Met à jour automatiquement la liste des métiers
+ * à partir des données réellement présentes dans l'Excel / Supabase.
+ */
+export function syncMetiers(rows = []) {
+  const fromData = [
+    ...new Set(
+      rows
+        .map(r => String(r.metier ?? "").trim())
+        .filter(Boolean)
+    )
+  ];
 
-export function round2(v){
-  return Math.round((Number(v)||0)*100)/100;
+  METIERS = fromData.sort((a, b) =>
+    String(a).localeCompare(String(b), "fr")
+  );
+
+  return METIERS;
 }
 
-export function n(v){
+
+// =========================
+// COULEURS
+// =========================
+
+const BASE_COLORS = {
+  "Mécanique": "#2563eb",
+  "Fluide": "#0891b2",
+  "Mesure": "#7c3aed",
+  "Electricité": "#ca8a04",
+  "Contrôle commande": "#db2777",
+  "Activité spécifique": "#0f766e",
+  "Indus Nuc": "#dc2626",
+  "Indus Conv": "#ea580c",
+  "Indus Elec": "#9333ea",
+  "Montage Nuc": "#16a34a",
+  "Montage Conv": "#65a30d",
+  "Montage Elec": "#059669",
+  "Architecte": "#475569",
+  "Pilotage": "#1d4ed8",
+  "Transverse": "#be123c",
+  "MERI": "#7e22ce",
+  "Essais": "#0f766e"
+};
+
+const EXTRA_COLORS = [
+  "#0284c7",
+  "#4f46e5",
+  "#9333ea",
+  "#c026d3",
+  "#db2777",
+  "#e11d48",
+  "#dc2626",
+  "#ea580c",
+  "#ca8a04",
+  "#65a30d",
+  "#16a34a",
+  "#059669",
+  "#0d9488",
+  "#0891b2",
+  "#2563eb"
+];
+
+/**
+ * Génère une couleur stable pour un nouveau métier.
+ * Le même métier conservera toujours la même couleur.
+ */
+export function getColor(metier) {
+  if (BASE_COLORS[metier]) {
+    return BASE_COLORS[metier];
+  }
+
+  let hash = 0;
+
+  for (let i = 0; i < String(metier).length; i++) {
+    hash =
+      String(metier).charCodeAt(i) +
+      ((hash << 5) - hash);
+  }
+
+  return EXTRA_COLORS[
+    Math.abs(hash) % EXTRA_COLORS.length
+  ];
+}
+
+// Proxy : COLORS["Nouveau métier"] fonctionne automatiquement
+export const COLORS = new Proxy(BASE_COLORS, {
+  get(target, property) {
+    if (typeof property !== "string") {
+      return undefined;
+    }
+
+    return getColor(property);
+  }
+});
+
+
+// =========================
+// COULEURS DES STATUTS
+// =========================
+
+export const STATUS_COLORS = {
+  vert: "#16a34a",
+  orange: "#ea580c",
+  rouge: "#dc2626"
+};
+
+
+// =========================
+// UTILITAIRES NUMÉRIQUES
+// =========================
+
+export function round2(v) {
+  return Math.round((Number(v) || 0) * 100) / 100;
+}
+
+export function n(v) {
   return Number(
     String(v ?? "")
-      .replace(/\s/g,"")
+      .replace(/\s/g, "")
       .replace(",", ".")
   ) || 0;
 }
 
-/**
- * Détermine le statut d'une ligne.
- *
- * Règle prioritaire :
- * - Si les heures consommées dépassent le budget alloué → rouge
- * - Sinon, statut selon l'écart de consommation par rapport au budget à date
- */
+
+// =========================
+// STATUT
+// =========================
+
 export function status(
   ecartPts,
   ecartBudgetAlloue,
-  green=5,
-  orange=10
-){
-  // Dépassement du budget alloué = CRITIQUE
-  if (ecartBudgetAlloue > 0) return "rouge";
+  green = 5,
+  orange = 10
+) {
+  // Dépassement du budget alloué = critique
+  if (ecartBudgetAlloue > 0) {
+    return "rouge";
+  }
 
-  // Analyse de l'écart entre consommation réelle
-  // et consommation théorique / à date
-  if (ecartPts <= green) return "vert";
+  if (ecartPts <= green) {
+    return "vert";
+  }
 
-  if (ecartPts <= orange) return "orange";
+  if (ecartPts <= orange) {
+    return "orange";
+  }
 
   return "rouge";
 }
 
-export function statusLabel(s){
+export function statusLabel(s) {
   return ({
-    vert:"Favorable",
-    orange:"Vigilance",
-    rouge:"Critique"
+    vert: "Favorable",
+    orange: "Vigilance",
+    rouge: "Critique"
   })[s] || "—";
 }
 
+
+// =========================
+// SYNTHÈSE
+// =========================
+
 export function synthese(
   rows,
-  metiers=METIERS,
-  filtres={},
-  thresholds={green:5,orange:10}
-){
+  metiers = METIERS,
+  filtres = {},
+  thresholds = { green: 5, orange: 10 }
+) {
+  // Sécurité : on récupère les métiers réellement présents
+  const metiersDynamiques = [
+    ...new Set(
+      metiers
+        .map(m => String(m ?? "").trim())
+        .filter(Boolean)
+    )
+  ];
+
   const filtered = rows.filter(r =>
-    (!filtres.affaire || r.affaire===filtres.affaire) &&
-    (!filtres.metier || r.metier===filtres.metier) &&
-    (!filtres.date || !r.date || r.date===filtres.date)
+    (!filtres.affaire || r.affaire === filtres.affaire) &&
+    (!filtres.metier || r.metier === filtres.metier) &&
+    (!filtres.date || !r.date || r.date === filtres.date)
   );
 
-  const lignes = metiers.map(m => {
-    const rs = filtered.filter(r => r.metier===m);
+  const lignes = metiersDynamiques.map(m => {
+    const rs = filtered.filter(r => r.metier === m);
 
     const encouru = rs.reduce(
-      (s,r) => s+n(r.encouru),
+      (s, r) => s + n(r.encouru),
       0
     );
 
     const budgetDate = rs.reduce(
-      (s,r) => s+n(r.budgetDate),
+      (s, r) => s + n(r.budgetDate),
       0
     );
 
     const budgetAlloue = rs.reduce(
-      (s,r) => s+n(r.budgetAlloue),
+      (s, r) => s + n(r.budgetAlloue),
       0
     );
 
-    // Consommation réelle par rapport au budget total alloué
     const consoReelle =
       budgetAlloue > 0
-        ? encouru/budgetAlloue*100
+        ? encouru / budgetAlloue * 100
         : 0;
 
-    // Consommation théorique / à date
     const consoDate =
       budgetAlloue > 0
-        ? budgetDate/budgetAlloue*100
+        ? budgetDate / budgetAlloue * 100
         : 0;
 
-    // Écart entre consommé et budget à date
     const ecartH =
-      encouru-budgetDate;
+      encouru - budgetDate;
 
-    // Écart en points de consommation
     const ecartPoints =
-      consoReelle-consoDate;
+      consoReelle - consoDate;
 
-    // Écart par rapport au budget alloué
-    // Positif = dépassement
     const ecartBudgetAlloue =
-      encouru-budgetAlloue;
+      encouru - budgetAlloue;
 
     return {
-      metier:m,
+      metier: m,
 
-      encouru:round2(encouru),
+      encouru: round2(encouru),
 
-      budgetDate:round2(budgetDate),
+      budgetDate: round2(budgetDate),
 
-      budgetAlloue:round2(budgetAlloue),
+      budgetAlloue: round2(budgetAlloue),
 
-      // Positif = heures dépassées
-      // Négatif = heures restantes
-      reste:round2(
-        budgetAlloue-encouru
+      reste: round2(
+        budgetAlloue - encouru
       ),
 
-      consoReelle:round2(
+      consoReelle: round2(
         consoReelle
       ),
 
-      consoDate:round2(
+      consoDate: round2(
         consoDate
       ),
 
-      ecartH:round2(
+      ecartH: round2(
         ecartH
       ),
 
-      ecartPoints:round2(
+      ecartPoints: round2(
         ecartPoints
       ),
 
-      ecartBudgetAlloue:round2(
+      ecartBudgetAlloue: round2(
         ecartBudgetAlloue
       ),
 
-      statut:status(
+      statut: status(
         ecartPoints,
         ecartBudgetAlloue,
         thresholds.green,
@@ -177,94 +292,94 @@ export function synthese(
 
   return {
     lignes,
-    total:aggregate(lignes,thresholds),
+    total: aggregate(
+      lignes,
+      thresholds
+    ),
     filtered
   };
 }
 
+
+// =========================
+// TOTAL
+// =========================
+
 export function aggregate(
   lignes,
-  thresholds={green:5,orange:10}
-){
+  thresholds = {
+    green: 5,
+    orange: 10
+  }
+) {
   const encouru = lignes.reduce(
-    (s,r) => s+r.encouru,
+    (s, r) => s + r.encouru,
     0
   );
 
   const budgetDate = lignes.reduce(
-    (s,r) => s+r.budgetDate,
+    (s, r) => s + r.budgetDate,
     0
   );
 
   const budgetAlloue = lignes.reduce(
-    (s,r) => s+r.budgetAlloue,
+    (s, r) => s + r.budgetAlloue,
     0
   );
 
-  // Consommation réelle
   const consoReelle =
     budgetAlloue
-      ? encouru/budgetAlloue*100
+      ? encouru / budgetAlloue * 100
       : 0;
 
-  // Consommation à date
   const consoDate =
     budgetAlloue
-      ? budgetDate/budgetAlloue*100
+      ? budgetDate / budgetAlloue * 100
       : 0;
 
-  // Écart entre consommé et budget à date
   const ecartH =
-    encouru-budgetDate;
+    encouru - budgetDate;
 
-  // Écart en points
   const ecartPoints =
-    consoReelle-consoDate;
+    consoReelle - consoDate;
 
-  // Écart par rapport au budget alloué
   const ecartBudgetAlloue =
-    encouru-budgetAlloue;
+    encouru - budgetAlloue;
 
   return {
-    metier:"TOTAL",
+    metier: "TOTAL",
 
-    encouru:round2(
-      encouru
+    encouru: round2(encouru),
+
+    budgetDate: round2(budgetDate),
+
+    budgetAlloue: round2(budgetAlloue),
+
+    reste: round2(
+      budgetAlloue - encouru
     ),
 
-    budgetDate:round2(
-      budgetDate
-    ),
-
-    budgetAlloue:round2(
-      budgetAlloue
-    ),
-
-    reste:round2(
-      budgetAlloue-encouru
-    ),
-
-    consoReelle:round2(
+    consoReelle: round2(
       consoReelle
     ),
 
-    consoDate:round2(
+    consoDate: round2(
       consoDate
     ),
 
-    ecartH:round2(
+    ecartH: round2(
       ecartH
     ),
 
-    ecartPoints:round2(
+    ecartPoints: round2(
       ecartPoints
     ),
 
-    ecartBudgetAlloue:round2(
+    ecartBudgetAlloue: round2(
       ecartBudgetAlloue
     ),
 
-    statut:status(
+    statut: status(
       ecartPoints,
       ecartBudgetAlloue,
       thresholds.green,
@@ -273,7 +388,12 @@ export function aggregate(
   };
 }
 
-export function distinct(rows,key){
+
+// =========================
+// DISTINCT
+// =========================
+
+export function distinct(rows, key) {
   return [
     ...new Set(
       rows
@@ -281,7 +401,7 @@ export function distinct(rows,key){
         .filter(Boolean)
     )
   ].sort(
-    (a,b) =>
+    (a, b) =>
       String(a).localeCompare(
         String(b),
         "fr"
@@ -289,60 +409,70 @@ export function distinct(rows,key){
   );
 }
 
-export function fmt(v){
+
+// =========================
+// FORMATAGE
+// =========================
+
+export function fmt(v) {
   return new Intl.NumberFormat(
     "fr-FR",
     {
-      maximumFractionDigits:0
+      maximumFractionDigits: 0
     }
   ).format(
-    Number(v)||0
+    Number(v) || 0
   );
 }
 
-export function fmt1(v){
+export function fmt1(v) {
   return new Intl.NumberFormat(
     "fr-FR",
     {
-      maximumFractionDigits:1
+      maximumFractionDigits: 1
     }
   ).format(
-    Number(v)||0
+    Number(v) || 0
   );
 }
 
-export function pct(v){
+export function pct(v) {
   return `${fmt1(v)} %`;
 }
 
-export function sign(v){
+export function sign(v) {
   return `${
-    v>0 ? "+" : ""
+    v > 0 ? "+" : ""
   }${fmt(v)}`;
 }
 
-export function normalizeHeader(s){
-  return String(s??"")
+
+// =========================
+// IMPORT EXCEL
+// =========================
+
+export function normalizeHeader(s) {
+  return String(s ?? "")
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g,"")
-    .replace(/[^a-z0-9]/g,"");
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
 }
 
 export const HEADER_ALIASES = {
-  affaire:[
+  affaire: [
     "affaire",
     "projet",
     "projetaffaire"
   ],
 
-  metier:[
+  metier: [
     "metier",
     "metieractivite"
   ],
 
-  encouru:[
+  encouru: [
     "heuresconsommees",
     "heuresconsomme",
     "encouru",
@@ -350,7 +480,7 @@ export const HEADER_ALIASES = {
     "consommation"
   ],
 
-  budgetDate:[
+  budgetDate: [
     "budgetadate",
     "budgetdate",
     "budgettheorique",
@@ -358,7 +488,7 @@ export const HEADER_ALIASES = {
     "budgeta"
   ],
 
-  budgetAlloue:[
+  budgetAlloue: [
     "budgetalloue",
     "budgettotal",
     "budget",
@@ -366,7 +496,7 @@ export const HEADER_ALIASES = {
     "budgetglobal"
   ],
 
-  date:[
+  date: [
     "date",
     "datedanalyse",
     "dateanalyse",
@@ -374,22 +504,31 @@ export const HEADER_ALIASES = {
   ]
 };
 
-export function mapColumns(headers){
-  const out={};
+export function mapColumns(headers) {
+  const out = {};
 
-  headers.forEach(h=>{
-    const k=normalizeHeader(h);
+  headers.forEach(h => {
+    const k = normalizeHeader(h);
 
-    for(
-      const [target,aliases]
+    for (
+      const [target, aliases]
       of Object.entries(HEADER_ALIASES)
-    ){
-      if(aliases.includes(k)){
-        out[target]=h;
+    ) {
+      if (aliases.includes(k)) {
+        out[target] = h;
         break;
       }
     }
   });
 
   return out;
+}
+
+
+// =========================
+// VALIDATION MÉTIER
+// =========================
+
+export function ensureMetier(m) {
+  return METIERS.includes(m);
 }

@@ -3,7 +3,7 @@ import {BrowserRouter,Routes,Route,useParams,useNavigate} from "react-router-dom
 import {BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,Legend,ResponsiveContainer,PieChart,Pie,Cell,LineChart,Line,ReferenceLine} from "recharts";
 import {Upload,FileSpreadsheet,Trash2,CheckCircle2,AlertTriangle,Download,FileText,Save,ArrowLeft} from "lucide-react";
 import {Layout,Card,KPI,Filters,Table,Status} from "./components";
-import {METIERS,COLORS,synthese,distinct,fmt,fmt1,pct,sign,STATUS_COLORS} from "./calculs";
+import {METIERS,COLORS,synthese,distinct,fmt,fmt1,pct,sign,STATUS_COLORS,syncMetiers} from "./calculs";
 import {loadData,saveData,loadSettings,saveSettings,resetData,subscribeToDataChanges} from "./store";
 import {readWorkbook} from "./importer";
 import {exportExcel,exportCSV,exportPDF,downloadTemplate} from "./export";
@@ -16,8 +16,11 @@ function useData(){
 
   useEffect(()=>{
     const load=async()=>{
-      const data=await loadData();
-      setRows(data);
+      const data = await loadData();
+
+syncMetiers(data);
+
+setRows(data);
     };
 
     load();
@@ -1053,9 +1056,11 @@ function Parametres(){
           ))}
         </div>
 
-        <p className="muted">
-          Les 17 métiers sont fixes dans cette version afin d'éviter les incohérences d'import.
-        </p>
+      <p className="muted">
+  Les métiers sont automatiquement détectés à partir des données d'alimentation.
+  Pour ajouter ou supprimer un métier, modifiez simplement la colonne « Métier »
+  dans le fichier Excel puis réimportez les données.
+</p>
 
       </Card>
 
